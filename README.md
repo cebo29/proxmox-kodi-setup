@@ -25,3 +25,8 @@ If you really need to use Ubuntu below 22.04 there is an issue with access right
 ```yaml
 chmod 660 /dev/tty7
 ```
+
+If you would like a desktop env, install xfce with this command:
+```
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/main/setup/xfce-install.sh)"
+```
