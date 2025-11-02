@@ -50,6 +50,18 @@ EOF
 chown -R kodi:kodi /home/kodi/.config
 msg_ok "Set up Kodi autostart"
 
+msg_info "Setting up shutdown/reboot permissions"
+mkdir -p /etc/polkit-1/localauthority/50-local.d
+cat <<EOF >/etc/polkit-1/localauthority/50-local.d/allow-shutdown.pkla
+[Allow kodi user to shutdown]
+Identity=unix-user:kodi
+Action=org.freedesktop.login1.power-off;org.freedesktop.login1.power-off-multiple-sessions;org.freedesktop.login1.reboot;org.freedesktop.login1.reboot-multiple-sessions
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+msg_ok "Set up shutdown/reboot permissions"
+
 msg_info "Restarting lightdm"
 systemctl restart lightdm
 msg_ok "Restarted lightdm"
@@ -59,3 +71,4 @@ echo -e "Your LXC will now:"
 echo -e "  1. Boot into XFCE"
 echo -e "  2. Automatically launch Kodi"
 echo -e "  3. Fall back to XFCE desktop when you exit Kodi"
+echo -e "  4. Allow shutdown/reboot from XFCE menu"
