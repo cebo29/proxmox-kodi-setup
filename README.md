@@ -9,7 +9,7 @@ based on great work of https://github.com/tteck/Proxmox
 ## To create a new Proxmox Kodi Media Manager, run the following in the Proxmox Shell.
 
 ```yaml
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/main/ct/kodi-v1.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/ct/kodi-v1.sh)"
 ```
 Kodi should be attached to TTY7 console
 
@@ -28,5 +28,5 @@ chmod 660 /dev/tty7
 
 If you would like a desktop env, install xfce with this command:
 ```
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/main/setup/xfce-install.sh)"
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)"
 ```
