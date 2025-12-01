@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 YW=`echo "\033[33m"`
 RD=`echo "\033[01;31m"`
 BL=`echo "\033[36m"`
@@ -9,26 +8,30 @@ CM="${GN}✓${CL}"
 CROSS="${RD}✗${CL}"
 BFR="\\r\\033[K"
 HOLD="-"
-
 function msg_info() {
     local msg="$1"
     echo -ne " ${HOLD} ${YW}${msg}..."
 }
-
 function msg_ok() {
     local msg="$1"
     echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
 }
-
 function msg_error() {
     local msg="$1"
     echo -e "${BFR} ${CROSS} ${RD}${msg}${CL}"
 }
-
 msg_info "Installing XFCE Desktop Environment"
 apt-get update &>/dev/null
 apt-get install -y xfce4 xfce4-goodies &>/dev/null
 msg_ok "Installed XFCE"
+
+msg_info "Installing GNOME Software and Flatpak support"
+apt-get install -y gnome-software gnome-software-plugin-flatpak flatpak &>/dev/null
+msg_ok "Installed GNOME Software and Flatpak"
+
+msg_info "Adding Flathub repository"
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
+msg_ok "Added Flathub repository"
 
 msg_info "Configuring lightdm to boot into XFCE"
 cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
@@ -72,3 +75,5 @@ echo -e "  1. Boot into XFCE"
 echo -e "  2. Automatically launch Kodi"
 echo -e "  3. Fall back to XFCE desktop when you exit Kodi"
 echo -e "  4. Allow shutdown/reboot from XFCE menu"
+echo -e "  5. Have GNOME Software (App Store) available with APT and Flatpak support"
+echo -e "\n${YW}Note: Log out and back in for Flatpak apps to appear in the app menu${CL}"
