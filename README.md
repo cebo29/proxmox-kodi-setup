@@ -13,6 +13,12 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelpe
 ```
 Kodi should be attached to TTY7 console
 
+If kodi is not installed, run in lxc console:
+
+```yaml
+bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/kodi-install.sh)"
+```
+
 ## To Update Kodi Media Manager:
 
 Run in the LXC console
@@ -21,11 +27,12 @@ apt update && apt upgrade -y
 ```
 ## Issue with X on Ubuntu 20.04 and Unprivileged
 
-If you really need to use Ubuntu below 22.04 there is an issue with access rights that prevents Xorg from starting on TTY7 on an Unprivileged container. Workaround exists but a change on the host machine is required so please accept the risk beforehand. In the Proxmox Shell:
+If you really need to use Ubuntu below 22.04 there is an issue with access rights that prevents Xorg from starting on TTY7 on an Unprivileged container. Workaround exists but a change on the host machine is required so please accept the risk beforehand. Or just use a privileged container instead. In the Proxmox Shell:
 ```yaml
 chmod 660 /dev/tty7
 ```
 
+## XFCE Desktop Environment
 If you would like a desktop env, install xfce with this command:
 ```
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)"
