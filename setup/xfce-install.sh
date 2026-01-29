@@ -35,86 +35,86 @@ echo -e "\n${YW}Please set a password for the kodi user:${CL}"
 passwd kodi
 msg_ok "Password set for kodi user"
 
-msg_info "Installing GNOME Software and Flatpak support"
-apt-get install -y gnome-software gnome-software-plugin-flatpak flatpak &>/dev/null
-msg_ok "Installed GNOME Software and Flatpak"
+# msg_info "Installing GNOME Software and Flatpak support"
+# apt-get install -y gnome-software gnome-software-plugin-flatpak flatpak &>/dev/null
+# msg_ok "Installed GNOME Software and Flatpak"
 
-msg_info "Adding Flathub repository"
-flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
-msg_ok "Added Flathub repository"
+# msg_info "Adding Flathub repository"
+# flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
+# msg_ok "Added Flathub repository"
 
-# read -p "Do you want to install Steam? (y/n): " -n 1 -r
-# echo
-# if [[ $REPLY =~ ^[Yy]$ ]]
-# then
-#     msg_info "Installing Steam"
-#     dpkg --add-architecture i386 &>/dev/null
-#     apt-get update &>/dev/null
-#     apt-get install -y steam &>/dev/null
-#     apt-get install -y -f &>/dev/null
-#     msg_ok "Installed Steam"
-# else
-#     msg_info "Skipping Steam installation"
-#     msg_ok "Creating Steam installer script on desktop"
+read -p "Do you want to install Steam? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]
+then
+    msg_info "Installing Steam"
+    dpkg --add-architecture i386 &>/dev/null
+    apt-get update &>/dev/null
+    apt-get install -y steam &>/dev/null
+    apt-get install -y -f &>/dev/null
+    msg_ok "Installed Steam"
+else
+    msg_info "Skipping Steam installation"
+    msg_ok "Creating Steam installer script on desktop"
     
-#     # Create steam installer script
-#     mkdir -p /home/kodi/Desktop
-#     cat <<'STEAMEOF' >/home/kodi/Desktop/install-steam.sh
-# #!/usr/bin/env bash
+    # Create steam installer script
+    mkdir -p /home/kodi/Desktop
+    cat <<'STEAMEOF' >/home/kodi/Desktop/install-steam.sh
+#!/usr/bin/env bash
 
-# YW=`echo "\033[33m"`
-# RD=`echo "\033[01;31m"`
-# GN=`echo "\033[1;92m"`
-# CL=`echo "\033[m"`
-# CM="${GN}✓${CL}"
-# BFR="\\r\\033[K"
-# HOLD="-"
+YW=`echo "\033[33m"`
+RD=`echo "\033[01;31m"`
+GN=`echo "\033[1;92m"`
+CL=`echo "\033[m"`
+CM="${GN}✓${CL}"
+BFR="\\r\\033[K"
+HOLD="-"
 
-# function msg_info() {
-#     local msg="$1"
-#     echo -ne " ${HOLD} ${YW}${msg}..."
-# }
+function msg_info() {
+    local msg="$1"
+    echo -ne " ${HOLD} ${YW}${msg}..."
+}
 
-# function msg_ok() {
-#     local msg="$1"
-#     echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
-# }
+function msg_ok() {
+    local msg="$1"
+    echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
+}
 
-# # Check if running as root
-# if [ "$EUID" -ne 0 ]; then 
-#     echo "Please run with: sudo bash ~/Desktop/install-steam.sh"
-#     read -p "Press Enter to exit..."
-#     exit 1
-# fi
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then 
+    echo "Please run with: sudo bash ~/Desktop/install-steam.sh"
+    read -p "Press Enter to exit..."
+    exit 1
+fi
 
-# msg_info "Enabling 32-bit architecture"
-# dpkg --add-architecture i386
-# msg_ok "Enabled 32-bit architecture"
+msg_info "Enabling 32-bit architecture"
+dpkg --add-architecture i386
+msg_ok "Enabled 32-bit architecture"
 
-# msg_info "Updating package lists"
-# apt-get update &>/dev/null
-# msg_ok "Updated package lists"
+msg_info "Updating package lists"
+apt-get update &>/dev/null
+msg_ok "Updated package lists"
 
-# msg_info "Installing Steam"
-# apt-get install -y steam &>/dev/null
-# msg_ok "Installed Steam"
+msg_info "Installing Steam"
+apt-get install -y steam &>/dev/null
+msg_ok "Installed Steam"
 
-# msg_info "Installing dependencies"
-# apt-get install -y -f &>/dev/null
-# msg_ok "Installed dependencies"
+msg_info "Installing dependencies"
+apt-get install -y -f &>/dev/null
+msg_ok "Installed dependencies"
 
-# echo -e "\n${GN}Steam installation complete!${CL}"
-# echo -e "You can launch Steam from the XFCE Applications menu."
-# echo -e "\nThis script will now be deleted."
-# read -p "Press Enter to exit..."
+echo -e "\n${GN}Steam installation complete!${CL}"
+echo -e "You can launch Steam from the XFCE Applications menu."
+echo -e "\nThis script will now be deleted."
+read -p "Press Enter to exit..."
 
-# # Self-delete
-# rm -- "$0"
-# STEAMEOF
+# Self-delete
+rm -- "$0"
+STEAMEOF
     
-#     chmod +x /home/kodi/Desktop/install-steam.sh
-#     chown kodi:kodi /home/kodi/Desktop/install-steam.sh
-# fi
+    chmod +x /home/kodi/Desktop/install-steam.sh
+    chown kodi:kodi /home/kodi/Desktop/install-steam.sh
+fi
 
 msg_info "Configuring lightdm to boot into XFCE"
 cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
