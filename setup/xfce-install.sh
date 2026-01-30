@@ -111,7 +111,19 @@ msg_ok "Set up PolicyKit permissions"
 echo -e "\n${GN}=== Installing Selected Applications ===${CL}\n"
 
 if [[ $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
-    msg_info "Installing Firefox"
+    msg_info "Installing Firefox from Mozilla PPA"
+    add-apt-repository -y ppa:mozillateam/ppa &>/dev/null
+    cat <<EOF >/etc/apt/preferences.d/mozilla-firefox
+Package: *
+Pin: release o=LP-PPA-mozillateam
+Pin-Priority: 1001
+EOF
+    cat <<EOF >/etc/apt/preferences.d/firefox-no-snap
+Package: firefox
+Pin: version 1:1snap*
+Pin-Priority: -1
+EOF
+    apt-get update &>/dev/null
     apt-get install -y firefox &>/dev/null
     msg_ok "Installed Firefox"
 fi
@@ -167,7 +179,18 @@ mkdir -p /home/kodi/Desktop
 if [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     cat <<'FIREFOXEOF' >/usr/local/bin/install-firefox.sh
 #!/usr/bin/env bash
-echo "Installing Firefox..."
+echo "Installing Firefox from Mozilla PPA..."
+add-apt-repository -y ppa:mozillateam/ppa &>/dev/null
+cat <<EOF >/etc/apt/preferences.d/mozilla-firefox
+Package: *
+Pin: release o=LP-PPA-mozillateam
+Pin-Priority: 1001
+EOF
+cat <<EOF >/etc/apt/preferences.d/firefox-no-snap
+Package: firefox
+Pin: version 1:1snap*
+Pin-Priority: -1
+EOF
 apt-get update &>/dev/null
 apt-get install -y firefox &>/dev/null
 echo "Firefox installation complete!"
