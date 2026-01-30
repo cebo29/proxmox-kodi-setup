@@ -35,6 +35,10 @@ echo -e "\n${YW}Please set a password for the kodi user:${CL}"
 passwd kodi
 msg_ok "Password set for kodi user"
 
+msg_info "Adding kodi user to sudo group"
+usermod -aG sudo kodi
+msg_ok "Added kodi user to sudo group"
+
 read -p "Do you want to install Steam? (y/n): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]
@@ -107,9 +111,9 @@ Version=1.0
 Type=Application
 Name=Install Steam
 Comment=Install Steam and dependencies
-Exec=x-terminal-emulator -e 'pkexec /usr/local/bin/install-steam.sh'
-Icon=steam
+Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-steam.sh"
 Terminal=false
+Icon=steam
 Categories=System;
 EOF
     
@@ -139,23 +143,16 @@ msg_ok "Set up Kodi autostart"
 
 msg_info "Setting up PolicyKit permissions"
 mkdir -p /etc/polkit-1/localauthority/50-local.d
-cat <<EOF >/etc/polkit-1/localauthority/50-local.d/allow-shutdown.pkla
-[Allow kodi user to shutdown]
+
+cat <<EOF >/etc/polkit-1/localauthority/50-local.d/allow-all.pkla
+[Allow kodi user all permissions]
 Identity=unix-user:kodi
-Action=org.freedesktop.login1.power-off;org.freedesktop.login1.power-off-multiple-sessions;org.freedesktop.login1.reboot;org.freedesktop.login1.reboot-multiple-sessions
+Action=*
 ResultAny=yes
 ResultInactive=yes
 ResultActive=yes
 EOF
 
-cat <<EOF >/etc/polkit-1/localauthority/50-local.d/allow-package-management.pkla
-[Allow kodi user to install packages]
-Identity=unix-user:kodi
-Action=org.debian.apt.*;org.freedesktop.packagekit.*
-ResultAny=yes
-ResultInactive=yes
-ResultActive=yes
-EOF
 msg_ok "Set up PolicyKit permissions"
 
 msg_info "Restarting lightdm"
