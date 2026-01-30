@@ -54,11 +54,11 @@ else
     cat <<'STEAMEOF' >/home/kodi/Desktop/install-steam.sh
 #!/usr/bin/env bash
 
-YW=`echo "\033[33m"`
-RD=`echo "\033[01;31m"`
-GN=`echo "\033[1;92m"`
-CL=`echo "\033[m"`
-CM="${GN}✓${CL}"
+YW=\$(echo "\033[33m")
+RD=\$(echo "\033[01;31m")
+GN=\$(echo "\033[1;92m")
+CL=\$(echo "\033[m")
+CM="\${GN}✓\${CL}"
 BFR="\\r\\033[K"
 HOLD="-"
 
