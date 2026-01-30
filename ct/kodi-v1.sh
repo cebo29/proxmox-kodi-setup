@@ -64,33 +64,35 @@ if [[ $PVE != 1 ]]; then
 fi
 }
 function default_settings() {
-		echo -e "${DGN}Using ${var_os} Version: ${BGN}${var_version}${CL}"
-		
+                echo -e "${DGN}Using ${var_os} Version: ${BGN}${var_version}${CL}"
+
     echo -e "${DGN}Using Container Type: ${BGN}Unprivileged${CL}"
     CT_TYPE="1"
-		echo -e "${DGN}Using Root Password: ${BGN}Automatic Login${CL}"
-		PW=""
-		echo -e "${DGN}Using Container ID: ${BGN}$NEXTID${CL}"
-		CT_ID=$NEXTID
-		echo -e "${DGN}Using Hostname: ${BGN}$NSAPP${CL}"
-		HN=$NSAPP
-		echo -e "${DGN}Using Disk Size: ${BGN}$var_disk${CL}${DGN}GB${CL}"
-		DISK_SIZE="$var_disk"
-		echo -e "${DGN}Allocated Cores ${BGN}$var_cpu${CL}"
-		CORE_COUNT="$var_cpu"
-		echo -e "${DGN}Allocated Ram ${BGN}$var_ram${CL}"
-		RAM_SIZE="$var_ram"
-		echo -e "${DGN}Using Bridge: ${BGN}vmbr0${CL}"
-		BRG="vmbr0"
-		echo -e "${DGN}Using Static IP Address: ${BGN}dhcp${CL}"
-		NET=dhcp
-		echo -e "${DGN}Using Gateway Address: ${BGN}Default${CL}"
-		GATE=""
-		echo -e "${DGN}Using MAC Address: ${BGN}Default${CL}"
-		MAC=""
+                echo -e "${DGN}Using Root Password: ${BGN}Automatic Login${CL}"
+                PW=""
+                echo -e "${DGN}Using Container ID: ${BGN}$NEXTID${CL}"
+                CT_ID=$NEXTID
+                echo -e "${DGN}Using Hostname: ${BGN}$NSAPP${CL}"
+                HN=$NSAPP
+                echo -e "${DGN}Using Disk Size: ${BGN}$var_disk${CL}${DGN}GB${CL}"
+                DISK_SIZE="$var_disk"
+                echo -e "${DGN}Allocated Cores ${BGN}$var_cpu${CL}"
+                CORE_COUNT="$var_cpu"
+                echo -e "${DGN}Allocated Ram ${BGN}$var_ram${CL}"
+                RAM_SIZE="$var_ram"
+                echo -e "${DGN}Using Bridge: ${BGN}vmbr0${CL}"
+                BRG="vmbr0"
+                echo -e "${DGN}Using Static IP Address: ${BGN}dhcp${CL}"
+                NET=dhcp
+                echo -e "${DGN}Using Gateway Address: ${BGN}Default${CL}"
+                GATE=""
+                echo -e "${DGN}Using DNS Address: ${BGN}Default${CL}"
+                DNS=""
+                echo -e "${DGN}Using MAC Address: ${BGN}Default${CL}"
+                MAC=""
     echo -e "${DGN}Using VLAN Tag: ${BGN}Default${CL}"
     VLAN=""
-		echo -e "${BL}Creating a ${APP} LXC using the above default settings${CL}"
+                echo -e "${BL}Creating a ${APP} LXC using the above default settings${CL}"
 }
 function advanced_settings() {
 var_version=$(whiptail --title "UBUNTU VERSION" --radiolist "Choose Version" 10 58 3 \
@@ -170,6 +172,16 @@ else
     echo -e "${DGN}Using Gateway IP Address: ${BGN}$GATE1${CL}"
   fi
 fi
+DNS1=$(whiptail --inputbox "Set a DNS IP (leave blank for default)" 8 58  --title "DNS IP ADDRESS" --cancel-button Exit-Script 3>&1 1>&2 2>&3)
+exitstatus=$?
+if [ $exitstatus = 0 ]; then
+  if [ -z $DNS1 ]; then DNS1="Default" DNS="";
+    echo -e "${DGN}Using DNS IP Address: ${BGN}$DNS1${CL}"
+else
+    DNS="-nameserver $DNS1"
+    echo -e "${DGN}Using DNS IP Address: ${BGN}$DNS1${CL}"
+  fi
+fi
 MAC1=$(whiptail --inputbox "Set a MAC Address(leave blank for default)" 8 58  --title "MAC ADDRESS" --cancel-button Exit-Script 3>&1 1>&2 2>&3)
 exitstatus=$?
 if [ $exitstatus = 0 ]; then
@@ -232,6 +244,7 @@ export PCT_OPTIONS="
   -memory $RAM_SIZE
   -unprivileged $CT_TYPE
   $PW
+  $DNS
 "
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/tteck/Proxmox/main/ct/create_lxc.sh)" || exit
 
@@ -267,6 +280,10 @@ lxc.mount.entry: /dev/input dev/input none bind,optional,create=dir
 # sound 
 lxc.cgroup2.devices.allow: c 116:* rwm
 lxc.mount.entry: /dev/snd dev/snd none bind,optional,create=dir
+lxc.cgroup2.devices.allow: a
+lxc.cap.drop:
+lxc.cgroup2.devices.allow: c 188:* rwm
+lxc.cgroup2.devices.allow: c 10:200 rwm
 EOF
 if [ "$CT_TYPE" == "1" ]; then
     cat <<EOF >> $LXC_CONFIG
