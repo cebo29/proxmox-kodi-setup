@@ -47,18 +47,18 @@ then
     msg_ok "Installed Steam"
 else
     msg_info "Skipping Steam installation"
-    msg_ok "Creating Steam installer script on desktop"
+    msg_ok "Creating Steam installer on desktop"
     
     # Create steam installer script
     mkdir -p /home/kodi/Desktop
-    cat <<'STEAMEOF' >/home/kodi/Desktop/install-steam.sh
+    cat <<'STEAMEOF' >/usr/local/bin/install-steam.sh
 #!/usr/bin/env bash
 
-YW=\$(echo "\033[33m")
-RD=\$(echo "\033[01;31m")
-GN=\$(echo "\033[1;92m")
-CL=\$(echo "\033[m")
-CM="\${GN}✓\${CL}"
+YW=$(echo "\033[33m")
+RD=$(echo "\033[01;31m")
+GN=$(echo "\033[1;92m")
+CL=$(echo "\033[m")
+CM="${GN}✓${CL}"
 BFR="\\r\\033[K"
 HOLD="-"
 
@@ -71,13 +71,6 @@ function msg_ok() {
     local msg="$1"
     echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
 }
-
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then 
-    echo "Please run with: sudo bash ~/Desktop/install-steam.sh"
-    read -p "Press Enter to exit..."
-    exit 1
-fi
 
 msg_info "Enabling 32-bit architecture"
 dpkg --add-architecture i386
@@ -97,15 +90,31 @@ msg_ok "Installed dependencies"
 
 echo -e "\n${GN}Steam installation complete!${CL}"
 echo -e "You can launch Steam from the XFCE Applications menu."
-echo -e "\nThis script will now be deleted."
+echo -e "\nThe desktop launcher will now be deleted."
 read -p "Press Enter to exit..."
 
-# Self-delete
-rm -- "$0"
+# Remove desktop launcher and self
+rm -f /home/kodi/Desktop/install-steam.desktop
+rm -f "$0"
 STEAMEOF
     
-    chmod +x /home/kodi/Desktop/install-steam.sh
-    chown kodi:kodi /home/kodi/Desktop/install-steam.sh
+    chmod +x /usr/local/bin/install-steam.sh
+    
+    # Create desktop launcher
+    cat <<EOF >/home/kodi/Desktop/install-steam.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install Steam
+Comment=Install Steam and dependencies
+Exec=x-terminal-emulator -e 'pkexec /usr/local/bin/install-steam.sh'
+Icon=steam
+Terminal=false
+Categories=System;
+EOF
+    
+    chmod +x /home/kodi/Desktop/install-steam.desktop
+    chown kodi:kodi /home/kodi/Desktop/install-steam.desktop
 fi
 
 msg_info "Configuring lightdm to boot into XFCE"
@@ -160,5 +169,5 @@ echo -e "  2. Automatically launch Kodi"
 echo -e "  3. Fall back to XFCE desktop when you exit Kodi"
 echo -e "  4. Allow shutdown/reboot from XFCE menu"
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "  5. Steam can be installed later using the script on the desktop"
+    echo -e "  5. Steam can be installed later by double-clicking 'Install Steam' on the desktop"
 fi
