@@ -39,7 +39,7 @@ msg_info "Adding kodi user to sudo group"
 usermod -aG sudo kodi
 msg_ok "Added kodi user to sudo group"
 
-read -p "Do you want to install Steam? (y/n): " -n 1 -r
+read -p "Do you want to install Steam? If you choose no, a shortcut to install steam will be created for you on the desktop. (y/n): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
