@@ -37,3 +37,4 @@ If you would like a desktop env, install xfce with this command:
 ```
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)"
 ```
+You will be prompted to set a password for the user "kodi" and asked if you want to install steam.
