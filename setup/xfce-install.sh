@@ -70,87 +70,100 @@ echo
 # Steam
 read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
 echo
-if [[ $REPLY =~ ^[Yy]$ ]]
-then
+
+echo ""
+
+msg_info "Configuring lightdm to boot into XFCE"
+cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
+[Seat:*]
+autologin-user=kodi
+autologin-session=xfce
+EOF
+msg_ok "Configured lightdm for XFCE"
+
+msg_info "Setting up Kodi autostart in XFCE"
+mkdir -p /home/kodi/.config/autostart
+cat <<EOF >/home/kodi/.config/autostart/kodi.desktop
+[Desktop Entry]
+Type=Application
+Name=Kodi
+Exec=kodi
+X-XFCE-Autostart-enabled=true
+EOF
+chown -R kodi:kodi /home/kodi/.config
+msg_ok "Set up Kodi autostart"
+
+msg_info "Setting up PolicyKit permissions"
+mkdir -p /etc/polkit-1/localauthority/50-local.d
+
+cat <<EOF >/etc/polkit-1/localauthority/50-local.d/allow-all.pkla
+[Allow kodi user all permissions]
+Identity=unix-user:kodi
+Action=*
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF
+
+msg_ok "Set up PolicyKit permissions"
+
+# Install selected applications
+echo -e "\n${GN}=== Installing Selected Applications ===${CL}\n"
+
+if [[ $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
+    msg_info "Installing Firefox"
+    apt-get install -y firefox &>/dev/null
+    msg_ok "Installed Firefox"
+fi
+
+if [[ $INSTALL_BRAVE =~ ^[Yy]$ ]]; then
+    msg_info "Installing Brave Browser"
+    apt-get install -y curl &>/dev/null
+    curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg &>/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list &>/dev/null
+    apt-get update &>/dev/null
+    apt-get install -y brave-browser &>/dev/null
+    msg_ok "Installed Brave Browser"
+fi
+
+if [[ $INSTALL_CHROME =~ ^[Yy]$ ]]; then
+    msg_info "Installing Google Chrome"
+    wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb &>/dev/null
+    apt-get install -y /tmp/chrome.deb &>/dev/null
+    rm /tmp/chrome.deb
+    msg_ok "Installed Google Chrome"
+fi
+
+if [[ $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]]; then
+    msg_info "Installing LibreOffice"
+    apt-get install -y libreoffice &>/dev/null
+    msg_ok "Installed LibreOffice"
+fi
+
+if [[ $INSTALL_VLC =~ ^[Yy]$ ]]; then
+    msg_info "Installing VLC Media Player"
+    apt-get install -y vlc &>/dev/null
+    msg_ok "Installed VLC Media Player"
+fi
+
+if [[ $INSTALL_GIMP =~ ^[Yy]$ ]]; then
+    msg_info "Installing GIMP"
+    apt-get install -y gimp &>/dev/null
+    msg_ok "Installed GIMP"
+fi
+
+if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
     msg_info "Installing Steam"
     dpkg --add-architecture i386 &>/dev/null
     apt-get update &>/dev/null
     apt-get install -y steam &>/dev/null
     apt-get install -y -f &>/dev/null
     msg_ok "Installed Steam"
-else
-    msg_info "Skipping Steam installation"
-    msg_ok "Creating Steam installer on desktop"
-    
-    # Create steam installer script
-    mkdir -p /home/kodi/Desktop
-    cat <<'STEAMEOF' >/usr/local/bin/install-steam.sh
-#!/usr/bin/env bash
-
-YW=$(echo "\033[33m")
-RD=$(echo "\033[01;31m")
-GN=$(echo "\033[1;92m")
-CL=$(echo "\033[m")
-CM="${GN}✓${CL}"
-BFR="\\r\\033[K"
-HOLD="-"
-
-function msg_info() {
-    local msg="$1"
-    echo -ne " ${HOLD} ${YW}${msg}..."
-}
-
-function msg_ok() {
-    local msg="$1"
-    echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
-}
-
-msg_info "Enabling 32-bit architecture"
-dpkg --add-architecture i386
-msg_ok "Enabled 32-bit architecture"
-
-msg_info "Updating package lists"
-apt-get update &>/dev/null
-msg_ok "Updated package lists"
-
-msg_info "Installing Steam"
-apt-get install -y steam &>/dev/null
-msg_ok "Installed Steam"
-
-msg_info "Installing dependencies"
-apt-get install -y -f &>/dev/null
-msg_ok "Installed dependencies"
-
-echo -e "\n${GN}Steam installation complete!${CL}"
-echo -e "You can launch Steam from the XFCE Applications menu."
-echo -e "\nThe desktop launcher will now be deleted."
-read -p "Press Enter to exit..."
-
-# Remove desktop launcher and self
-rm -f /home/kodi/Desktop/install-steam.desktop
-rm -f "$0"
-STEAMEOF
-    
-    chmod +x /usr/local/bin/install-steam.sh
-    
-    # Create desktop launcher
-    cat <<EOF >/home/kodi/Desktop/install-steam.desktop
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Install Steam
-Comment=Install Steam and dependencies
-Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-steam.sh"
-Terminal=false
-Icon=steam
-Categories=System;
-EOF
-    
-    chmod +x /home/kodi/Desktop/install-steam.desktop
-    chown kodi:kodi /home/kodi/Desktop/install-steam.desktop
 fi
 
-# Create launchers for skipped applications
+# Create desktop launchers for skipped applications
+mkdir -p /home/kodi/Desktop
+
 if [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     cat <<'FIREFOXEOF' >/usr/local/bin/install-firefox.sh
 #!/usr/bin/env bash
@@ -330,39 +343,69 @@ EOF
     chown kodi:kodi /home/kodi/Desktop/install-gimp.desktop
 fi
 
-msg_info "Configuring lightdm to boot into XFCE"
-cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
-[Seat:*]
-autologin-user=kodi
-autologin-session=xfce
-EOF
-msg_ok "Configured lightdm for XFCE"
+if [[ ! $INSTALL_STEAM =~ ^[Yy]$ ]]; then
+    cat <<'STEAMEOF' >/usr/local/bin/install-steam.sh
+#!/usr/bin/env bash
 
-msg_info "Setting up Kodi autostart in XFCE"
-mkdir -p /home/kodi/.config/autostart
-cat <<EOF >/home/kodi/.config/autostart/kodi.desktop
+YW=$(echo "\033[33m")
+RD=$(echo "\033[01;31m")
+GN=$(echo "\033[1;92m")
+CL=$(echo "\033[m")
+CM="${GN}✓${CL}"
+BFR="\\r\\033[K"
+HOLD="-"
+
+function msg_info() {
+    local msg="$1"
+    echo -ne " ${HOLD} ${YW}${msg}..."
+}
+
+function msg_ok() {
+    local msg="$1"
+    echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
+}
+
+msg_info "Enabling 32-bit architecture"
+dpkg --add-architecture i386
+msg_ok "Enabled 32-bit architecture"
+
+msg_info "Updating package lists"
+apt-get update &>/dev/null
+msg_ok "Updated package lists"
+
+msg_info "Installing Steam"
+apt-get install -y steam &>/dev/null
+msg_ok "Installed Steam"
+
+msg_info "Installing dependencies"
+apt-get install -y -f &>/dev/null
+msg_ok "Installed dependencies"
+
+echo -e "\n${GN}Steam installation complete!${CL}"
+echo -e "You can launch Steam from the XFCE Applications menu."
+echo -e "\nThe desktop launcher will now be deleted."
+read -p "Press Enter to exit..."
+
+# Remove desktop launcher and self
+rm -f /home/kodi/Desktop/install-steam.desktop
+rm -f "$0"
+STEAMEOF
+    chmod +x /usr/local/bin/install-steam.sh
+    
+    cat <<EOF >/home/kodi/Desktop/install-steam.desktop
 [Desktop Entry]
+Version=1.0
 Type=Application
-Name=Kodi
-Exec=kodi
-X-XFCE-Autostart-enabled=true
+Name=Install Steam
+Comment=Install Steam and dependencies
+Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-steam.sh"
+Terminal=false
+Icon=steam
+Categories=System;
 EOF
-chown -R kodi:kodi /home/kodi/.config
-msg_ok "Set up Kodi autostart"
-
-msg_info "Setting up PolicyKit permissions"
-mkdir -p /etc/polkit-1/localauthority/50-local.d
-
-cat <<EOF >/etc/polkit-1/localauthority/50-local.d/allow-all.pkla
-[Allow kodi user all permissions]
-Identity=unix-user:kodi
-Action=*
-ResultAny=yes
-ResultInactive=yes
-ResultActive=yes
-EOF
-
-msg_ok "Set up PolicyKit permissions"
+    chmod +x /home/kodi/Desktop/install-steam.desktop
+    chown kodi:kodi /home/kodi/Desktop/install-steam.desktop
+fi
 
 msg_info "Restarting lightdm"
 systemctl restart lightdm
