@@ -43,11 +43,6 @@ echo -e "\n${GN}=== Optional Software Installation ===${CL}"
 echo -e "Select which applications you want to install:"
 echo ""
 
-# Steam
-read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
-echo
-STEAM_SELECTED=$INSTALL_STEAM
-
 # Firefox
 read -p "Install Firefox? (y/n): " -n 1 -r INSTALL_FIREFOX
 echo
@@ -70,6 +65,10 @@ echo
 
 # GIMP
 read -p "Install GIMP (Image Editor)? (y/n): " -n 1 -r INSTALL_GIMP
+echo
+
+# Steam
+read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
 echo
 
 echo ""
@@ -384,7 +383,7 @@ echo -e "  5. Kodi user has full sudo access"
 
 # Count skipped apps
 SKIPPED=0
-[[ ! $STEAM_SELECTED =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_CHROME =~ ^[Yy]$ ]] && ((SKIPPED++))
