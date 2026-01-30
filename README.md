@@ -13,7 +13,7 @@ bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelpe
 ```
 Kodi should be attached to TTY7 console
 
-If kodi is not installed, run in lxc console:
+If kodi is not installed automatically, run in lxc console:
 
 ```yaml
 bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/kodi-install.sh)"
