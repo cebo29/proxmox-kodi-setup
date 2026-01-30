@@ -112,6 +112,7 @@ echo -e "\n${GN}=== Installing Selected Applications ===${CL}\n"
 
 if [[ $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     msg_info "Installing Firefox from Mozilla PPA"
+    apt-get install -y software-properties-common &>/dev/null
     add-apt-repository -y ppa:mozillateam/ppa &>/dev/null
     cat <<EOF >/etc/apt/preferences.d/mozilla-firefox
 Package: *
@@ -180,6 +181,7 @@ if [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     cat <<'FIREFOXEOF' >/usr/local/bin/install-firefox.sh
 #!/usr/bin/env bash
 echo "Installing Firefox from Mozilla PPA..."
+apt-get install -y software-properties-common &>/dev/null
 add-apt-repository -y ppa:mozillateam/ppa &>/dev/null
 cat <<EOF >/etc/apt/preferences.d/mozilla-firefox
 Package: *
