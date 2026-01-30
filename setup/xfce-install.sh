@@ -68,7 +68,7 @@ read -p "Install GIMP (Image Editor)? (y/n): " -n 1 -r INSTALL_GIMP
 echo
 
 # Steam
-read -p "Install Steam? (y/n): " -n 1 -r
+read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
