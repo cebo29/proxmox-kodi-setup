@@ -88,9 +88,9 @@ echo -e "\n${YW}Please set a password for the kodi user:${CL}"
 passwd kodi
 msg_ok "Password set for kodi user"
 
-msg_info "Adding kodi user to sudo and audio groups"
-usermod -aG sudo,audio kodi
-msg_ok "Added kodi user to sudo and audio groups"
+msg_info "Adding kodi user to sudo and device access groups"
+usermod -aG sudo,audio,input,video,render kodi
+msg_ok "Added kodi user to sudo and device access groups"
 
 echo -e "\n${GN}=== Optional Software Installation ===${CL}"
 echo -e "Select which applications you want to install:"
