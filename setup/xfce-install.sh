@@ -30,6 +30,14 @@ apt-get update &>/dev/null
 apt-get install -y xfce4 xfce4-goodies &>/dev/null
 msg_ok "Installed XFCE"
 
+msg_info "Creating kodi user"
+if ! id -u kodi &>/dev/null; then
+    useradd -m -s /bin/bash kodi
+    msg_ok "Created kodi user"
+else
+    msg_ok "Kodi user already exists"
+fi
+
 echo -e "\n${GN}=== Kodi Installation Method ===${CL}"
 echo -e "Choose how to install Kodi:"
 echo -e "  ${GN}1.${CL} PPA (team-xbmc) - Kodi 20.x (older, but integrates better)"
@@ -119,6 +127,10 @@ echo
 echo ""
 
 msg_info "Configuring lightdm to boot into XFCE"
+if ! command -v lightdm &> /dev/null; then
+    apt-get install -y lightdm lightdm-gtk-greeter &>/dev/null
+fi
+
 cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
 [Seat:*]
 autologin-user=kodi
