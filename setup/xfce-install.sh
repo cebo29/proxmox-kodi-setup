@@ -38,30 +38,33 @@ else
     msg_ok "Kodi user already exists"
 fi
 
-echo -e "\n${GN}=== Kodi Installation Method ===${CL}"
-echo -e "Choose how to install Kodi:"
-echo -e "  ${GN}1.${CL} PPA (team-xbmc) - Kodi 20.x (older, but integrates better)"
-echo -e "  ${GN}2.${CL} Flatpak (Flathub) - Kodi 21.x (latest version)"
-echo -e ""
-echo -e "${YW}Note:${CL} The official PPA is no longer actively maintained."
-echo -e "Flatpak has the latest version but runs in a sandbox."
-echo -e ""
-
-while true; do
-    read -p "Select installation method [1-2]: " KODI_METHOD
-    if [ "$KODI_METHOD" = "1" ] || [ "$KODI_METHOD" = "2" ]; then
-        break
-    else
-        echo -e "${RD}Invalid choice. Please enter 1 or 2.${CL}"
-    fi
-done
+# Use environment variable if set, otherwise prompt
+if [ -z "$KODI_METHOD" ]; then
+    echo -e "\n${GN}=== Kodi Installation Method ===${CL}"
+    echo -e "Choose how to install Kodi:"
+    echo -e "  ${GN}1.${CL} PPA (team-xbmc) - Kodi 20.x (older, but integrates better)"
+    echo -e "  ${GN}2.${CL} Flatpak (Flathub) - Kodi 21.x (latest version)"
+    echo -e ""
+    echo -e "${YW}Note:${CL} The official PPA is no longer actively maintained."
+    echo -e "Flatpak has the latest version but runs in a sandbox."
+    echo -e ""
+    
+    while true; do
+        read -p "Select installation method [1-2]: " KODI_METHOD
+        if [ "$KODI_METHOD" = "1" ] || [ "$KODI_METHOD" = "2" ]; then
+            break
+        else
+            echo -e "${RD}Invalid choice. Please enter 1 or 2.${CL}"
+        fi
+    done
+fi
 
 if [ "$KODI_METHOD" = "1" ]; then
     msg_info "Installing Kodi from PPA"
     apt-get install -y software-properties-common &>/dev/null
     add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
     apt-get update &>/dev/null
-    apt-get install -y kodi
+    apt-get install -y kodi &>/dev/null
     if command -v kodi &> /dev/null; then
         KODI_EXEC="kodi"
         msg_ok "Installed Kodi from PPA (version 20.x)"
@@ -73,7 +76,7 @@ else
     msg_info "Installing Kodi via Flatpak"
     apt-get install -y flatpak &>/dev/null
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
-    flatpak install -y flathub tv.kodi.Kodi
+    flatpak install -y flathub tv.kodi.Kodi &>/dev/null
     if flatpak list | grep -q "tv.kodi.Kodi"; then
         KODI_EXEC="flatpak run tv.kodi.Kodi"
         msg_ok "Installed Kodi via Flatpak (version 21.x)"
@@ -84,47 +87,64 @@ else
 fi
 
 msg_info "Setting password for kodi user"
-echo -e "\n${YW}Please set a password for the kodi user:${CL}"
-passwd kodi
-msg_ok "Password set for kodi user"
+if [ -n "$KODI_PASS" ]; then
+    echo "kodi:$KODI_PASS" | chpasswd
+    msg_ok "Password set for kodi user"
+else
+    echo -e "\n${YW}Please set a password for the kodi user:${CL}"
+    passwd kodi
+    msg_ok "Password set for kodi user"
+fi
 
 msg_info "Adding kodi user to sudo and device access groups"
 usermod -aG sudo,audio,input,video,render kodi
 msg_ok "Added kodi user to sudo and device access groups"
 
-echo -e "\n${GN}=== Optional Software Installation ===${CL}"
-echo -e "Select which applications you want to install:"
-echo ""
-
-# Firefox
-read -p "Install Firefox? (y/n): " -n 1 -r INSTALL_FIREFOX
-echo
-
-# Brave Browser
-read -p "Install Brave Browser? (y/n): " -n 1 -r INSTALL_BRAVE
-echo
-
-# Google Chrome
-read -p "Install Google Chrome? (y/n): " -n 1 -r INSTALL_CHROME
-echo
-
-# LibreOffice
-read -p "Install LibreOffice? (y/n): " -n 1 -r INSTALL_LIBREOFFICE
-echo
-
-# VLC Media Player
-read -p "Install VLC Media Player? (y/n): " -n 1 -r INSTALL_VLC
-echo
-
-# GIMP
-read -p "Install GIMP (Image Editor)? (y/n): " -n 1 -r INSTALL_GIMP
-echo
-
-# Steam
-read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
-echo
-
-echo ""
+# Use environment variable if set, otherwise prompt for software
+if [ -z "$INSTALL_APPS" ]; then
+    echo -e "\n${GN}=== Optional Software Installation ===${CL}"
+    echo -e "Select which applications you want to install:"
+    echo ""
+    
+    # Firefox
+    read -p "Install Firefox? (y/n): " -n 1 -r INSTALL_FIREFOX
+    echo
+    
+    # Brave Browser
+    read -p "Install Brave Browser? (y/n): " -n 1 -r INSTALL_BRAVE
+    echo
+    
+    # Google Chrome
+    read -p "Install Google Chrome? (y/n): " -n 1 -r INSTALL_CHROME
+    echo
+    
+    # LibreOffice
+    read -p "Install LibreOffice? (y/n): " -n 1 -r INSTALL_LIBREOFFICE
+    echo
+    
+    # VLC Media Player
+    read -p "Install VLC Media Player? (y/n): " -n 1 -r INSTALL_VLC
+    echo
+    
+    # GIMP
+    read -p "Install GIMP (Image Editor)? (y/n): " -n 1 -r INSTALL_GIMP
+    echo
+    
+    # Steam
+    read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
+    echo
+    
+    echo ""
+else
+    # Parse INSTALL_APPS from whiptail checklist output
+    [[ "$INSTALL_APPS" == *"FIREFOX"* ]] && INSTALL_FIREFOX="y" || INSTALL_FIREFOX="n"
+    [[ "$INSTALL_APPS" == *"BRAVE"* ]] && INSTALL_BRAVE="y" || INSTALL_BRAVE="n"
+    [[ "$INSTALL_APPS" == *"CHROME"* ]] && INSTALL_CHROME="y" || INSTALL_CHROME="n"
+    [[ "$INSTALL_APPS" == *"LIBREOFFICE"* ]] && INSTALL_LIBREOFFICE="y" || INSTALL_LIBREOFFICE="n"
+    [[ "$INSTALL_APPS" == *"VLC"* ]] && INSTALL_VLC="y" || INSTALL_VLC="n"
+    [[ "$INSTALL_APPS" == *"GIMP"* ]] && INSTALL_GIMP="y" || INSTALL_GIMP="n"
+    [[ "$INSTALL_APPS" == *"STEAM"* ]] && INSTALL_STEAM="y" || INSTALL_STEAM="n"
+fi
 
 msg_info "Configuring lightdm to boot into XFCE"
 if ! command -v lightdm &> /dev/null; then
@@ -269,7 +289,7 @@ else
             echo
             
             if [[ $TRY_AGAIN =~ ^[Yy]$ ]]; then
-                # Recursive call to device selection
+                # Allow retry with different device
                 while true; do
                     echo -e "\n${GN}Available devices:${CL}\n"
                     for i in "${!DEVICES[@]}"; do
@@ -348,6 +368,12 @@ else
 
 # Include the default PulseAudio config
 .include /etc/pulse/default.pa
+
+# Don't auto-suspend when idle
+unload-module module-suspend-on-idle
+PAEOF
+    msg_ok "Configured PulseAudio with auto-detection"
+fi
 
 # Don't auto-suspend when idle
 unload-module module-suspend-on-idle
