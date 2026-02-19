@@ -438,6 +438,7 @@ SERVEOF
 
 systemctl daemon-reload
 systemctl enable kodi-exit-monitor.service &>/dev/null
+systemctl start kodi-exit-monitor.service
 
 msg_ok "Set up Kodi exit monitor"
 
