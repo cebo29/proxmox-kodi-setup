@@ -30,6 +30,51 @@ apt-get update &>/dev/null
 apt-get install -y xfce4 xfce4-goodies &>/dev/null
 msg_ok "Installed XFCE"
 
+echo -e "\n${GN}=== Kodi Installation Method ===${CL}"
+echo -e "Choose how to install Kodi:"
+echo -e "  ${GN}1.${CL} PPA (team-xbmc) - Kodi 20.x (older, but integrates better)"
+echo -e "  ${GN}2.${CL} Flatpak (Flathub) - Kodi 21.x (latest version)"
+echo -e ""
+echo -e "${YW}Note:${CL} The official PPA is no longer actively maintained."
+echo -e "Flatpak has the latest version but runs in a sandbox."
+echo -e ""
+
+while true; do
+    read -p "Select installation method [1-2]: " KODI_METHOD
+    if [ "$KODI_METHOD" = "1" ] || [ "$KODI_METHOD" = "2" ]; then
+        break
+    else
+        echo -e "${RD}Invalid choice. Please enter 1 or 2.${CL}"
+    fi
+done
+
+if [ "$KODI_METHOD" = "1" ]; then
+    msg_info "Installing Kodi from PPA"
+    apt-get install -y software-properties-common &>/dev/null
+    add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
+    apt-get update &>/dev/null
+    apt-get install -y kodi
+    if command -v kodi &> /dev/null; then
+        KODI_EXEC="kodi"
+        msg_ok "Installed Kodi from PPA (version 20.x)"
+    else
+        msg_error "Kodi installation failed"
+        exit 1
+    fi
+else
+    msg_info "Installing Kodi via Flatpak"
+    apt-get install -y flatpak &>/dev/null
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
+    flatpak install -y flathub tv.kodi.Kodi
+    if flatpak list | grep -q "tv.kodi.Kodi"; then
+        KODI_EXEC="flatpak run tv.kodi.Kodi"
+        msg_ok "Installed Kodi via Flatpak (version 21.x)"
+    else
+        msg_error "Kodi Flatpak installation failed"
+        exit 1
+    fi
+fi
+
 msg_info "Setting password for kodi user"
 echo -e "\n${YW}Please set a password for the kodi user:${CL}"
 passwd kodi
@@ -83,13 +128,13 @@ msg_ok "Configured lightdm for XFCE"
 
 msg_info "Setting up Kodi autostart in XFCE"
 mkdir -p /home/kodi/.config/autostart
-cat <<EOF >/home/kodi/.config/autostart/kodi.desktop
+cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
 [Desktop Entry]
 Type=Application
 Name=Kodi
-Exec=kodi
+Exec=$KODI_EXEC
 X-XFCE-Autostart-enabled=true
-EOF
+KODIEOF
 chown -R kodi:kodi /home/kodi/.config
 msg_ok "Set up Kodi autostart"
 
@@ -277,13 +322,13 @@ cat > /usr/local/bin/kodi-exit-monitor.sh <<'MONEOF'
 # Monitor for Kodi process and restart panel when it exits
 
 while true; do
-    # Wait for Kodi to be running
-    while ! pgrep -x "kodi.bin" > /dev/null 2>&1; do
+    # Wait for Kodi to be running (check both native and flatpak)
+    while ! pgrep -x "kodi.bin" > /dev/null 2>&1 && ! pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
         sleep 2
     done
     
     # Kodi is running, wait for it to exit
-    while pgrep -x "kodi.bin" > /dev/null 2>&1; do
+    while pgrep -x "kodi.bin" > /dev/null 2>&1 || pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
         sleep 2
     done
     
