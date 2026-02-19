@@ -207,6 +207,51 @@ fi
 if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
     INSTALL_MODE="xfce"
     echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
+    
+    # XFCE-specific configuration prompts
+    KODI_METHOD=$(whiptail --title "KODI VERSION" --radiolist "Choose Kodi installation method:" 12 68 2 \
+        "1" "PPA (Kodi 20.x - older, better integration)" ON \
+        "2" "Flatpak (Kodi 21.x - latest version)" OFF \
+        3>&1 1>&2 2>&3)
+    if [ "$KODI_METHOD" = "1" ]; then
+        echo -e "${GN}Using: Kodi from PPA (version 20.x)${CL}"
+    else
+        echo -e "${GN}Using: Kodi from Flatpak (version 21.x)${CL}"
+    fi
+    
+    # Password for kodi user
+    while true; do
+        KODI_PASS=$(whiptail --passwordbox "Set password for kodi user:" 8 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
+        exitstatus=$?
+        if [ $exitstatus != 0 ]; then
+            echo -e "${RD}Password is required${CL}"
+            continue
+        fi
+        KODI_PASS_CONFIRM=$(whiptail --passwordbox "Confirm password:" 8 58 --title "CONFIRM PASSWORD" 3>&1 1>&2 2>&3)
+        if [ "$KODI_PASS" = "$KODI_PASS_CONFIRM" ]; then
+            echo -e "${GN}Password set for kodi user${CL}"
+            break
+        else
+            whiptail --msgbox "Passwords do not match. Please try again." 8 58 --title "ERROR"
+        fi
+    done
+    
+    # Optional software selection
+    APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
+        "Select applications to install:" 16 68 7 \
+        "FIREFOX" "Firefox web browser" OFF \
+        "BRAVE" "Brave web browser" OFF \
+        "CHROME" "Google Chrome" OFF \
+        "LIBREOFFICE" "LibreOffice suite" OFF \
+        "VLC" "VLC Media Player" OFF \
+        "GIMP" "GIMP Image Editor" OFF \
+        "STEAM" "Steam gaming platform" OFF \
+        3>&1 1>&2 2>&3)
+    
+    # Export variables for xfce-install.sh
+    export KODI_METHOD
+    export KODI_PASS
+    export INSTALL_APPS="$APPS"
 else
     INSTALL_MODE="standalone"
     echo -e "${GN}Selected: Standalone Kodi${CL}"
@@ -231,6 +276,51 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
   if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
       INSTALL_MODE="xfce"
       echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
+      
+      # XFCE-specific configuration prompts
+      KODI_METHOD=$(whiptail --title "KODI VERSION" --radiolist "Choose Kodi installation method:" 12 68 2 \
+          "1" "PPA (Kodi 20.x - older, better integration)" ON \
+          "2" "Flatpak (Kodi 21.x - latest version)" OFF \
+          3>&1 1>&2 2>&3)
+      if [ "$KODI_METHOD" = "1" ]; then
+          echo -e "${GN}Using: Kodi from PPA (version 20.x)${CL}"
+      else
+          echo -e "${GN}Using: Kodi from Flatpak (version 21.x)${CL}"
+      fi
+      
+      # Password for kodi user
+      while true; do
+          KODI_PASS=$(whiptail --passwordbox "Set password for kodi user:" 8 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
+          exitstatus=$?
+          if [ $exitstatus != 0 ]; then
+              echo -e "${RD}Password is required${CL}"
+              continue
+          fi
+          KODI_PASS_CONFIRM=$(whiptail --passwordbox "Confirm password:" 8 58 --title "CONFIRM PASSWORD" 3>&1 1>&2 2>&3)
+          if [ "$KODI_PASS" = "$KODI_PASS_CONFIRM" ]; then
+              echo -e "${GN}Password set for kodi user${CL}"
+              break
+          else
+              whiptail --msgbox "Passwords do not match. Please try again." 8 58 --title "ERROR"
+          fi
+      done
+      
+      # Optional software selection
+      APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
+          "Select applications to install:" 16 68 7 \
+          "FIREFOX" "Firefox web browser" OFF \
+          "BRAVE" "Brave web browser" OFF \
+          "CHROME" "Google Chrome" OFF \
+          "LIBREOFFICE" "LibreOffice suite" OFF \
+          "VLC" "VLC Media Player" OFF \
+          "GIMP" "GIMP Image Editor" OFF \
+          "STEAM" "Steam gaming platform" OFF \
+          3>&1 1>&2 2>&3)
+      
+      # Export variables for xfce-install.sh
+      export KODI_METHOD
+      export KODI_PASS
+      export INSTALL_APPS="$APPS"
   else
       INSTALL_MODE="standalone"
       echo -e "${GN}Selected: Standalone Kodi${CL}"
@@ -343,7 +433,7 @@ msg_ok "Started LXC Container"
 
 # Run the appropriate installation script based on earlier selection
 if [ "$INSTALL_MODE" = "xfce" ]; then
-    lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+    lxc-attach -n $CTID -- bash -c "export KODI_METHOD='$KODI_METHOD' KODI_PASS='$KODI_PASS' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE Desktop with Kodi installed successfully!"
     ADDITIONAL_INFO="• Kodi auto-starts on boot\n• Exit Kodi to access XFCE desktop\n• Volume control in panel works\n• Steam auto-starts if installed"
 else
