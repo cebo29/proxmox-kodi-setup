@@ -211,15 +211,27 @@ else
   advanced_settings
 fi
 }
+function select_installation_mode() {
+# Ask user which installation mode they want
+if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
+    INSTALL_MODE="xfce"
+    echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
+else
+    INSTALL_MODE="standalone"
+    echo -e "${GN}Selected: Standalone Kodi${CL}"
+fi
+}
 function start_script() {
 if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Advanced 10 58); then
   header_info
   echo -e "${BL}Using Default Settings${CL}"
   default_settings
+  select_installation_mode
 else
   header_info
   echo -e "${RD}Using Advanced Settings${CL}"
   advanced_settings
+  select_installation_mode
 fi
 }
 clear
@@ -322,16 +334,7 @@ msg_info "Starting LXC Container"
 pct start $CTID
 msg_ok "Started LXC Container"
 
-# Ask user which installation mode they want
-if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
-    INSTALL_MODE="xfce"
-    echo -e "${GN}Installing Kodi with XFCE Desktop Environment${CL}"
-else
-    INSTALL_MODE="standalone"
-    echo -e "${GN}Installing Standalone Kodi${CL}"
-fi
-
-# Run the appropriate installation script
+# Run the appropriate installation script based on earlier selection
 if [ "$INSTALL_MODE" = "xfce" ]; then
     lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE Desktop with Kodi installed successfully!"
