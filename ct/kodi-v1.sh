@@ -322,10 +322,38 @@ msg_info "Starting LXC Container"
 pct start $CTID
 msg_ok "Started LXC Container"
 
-lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/$var_install.sh)" || exit
-lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+# Ask user which installation mode they want
+if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
+    INSTALL_MODE="xfce"
+    echo -e "${GN}Installing Kodi with XFCE Desktop Environment${CL}"
+else
+    INSTALL_MODE="standalone"
+    echo -e "${GN}Installing Standalone Kodi${CL}"
+fi
+
+# Run the appropriate installation script
+if [ "$INSTALL_MODE" = "xfce" ]; then
+    lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+    SUCCESS_MSG="XFCE Desktop with Kodi installed successfully!"
+    ADDITIONAL_INFO="• Kodi auto-starts on boot\n• Exit Kodi to access XFCE desktop\n• Volume control in panel works\n• Steam auto-starts if installed"
+else
+    lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/$var_install.sh)" || exit
+    SUCCESS_MSG="Standalone Kodi installed successfully!"
+    ADDITIONAL_INFO="• Kodi runs directly on TTY7\n• Minimal overhead for best performance"
+fi
+
 IP=$(pct exec $CTID ip a s dev eth0 | sed -n '/inet / s/\// /p' | awk '{print $2}')
-pct set $CTID -description "# ${APP} LXC"
+pct set $CTID -description "# ${APP} LXC - ${INSTALL_MODE} mode"
 msg_ok "Completed Successfully!\n"
-echo -e "${APP} should be started on TTY7
-             \n"
+
+echo -e "\n${GN}╔════════════════════════════════════════════════╗${CL}"
+echo -e "${GN}║        Kodi LXC Setup Complete!               ║${CL}"
+echo -e "${GN}╚════════════════════════════════════════════════╝${CL}\n"
+echo -e "${SUCCESS_MSG}"
+echo -e "\n${BL}Container Details:${CL}"
+echo -e "  • Container ID: ${GN}$CTID${CL}"
+echo -e "  • IP Address: ${GN}$IP${CL}"
+echo -e "  • Installation Mode: ${GN}$INSTALL_MODE${CL}"
+echo -e "\n${BL}Features:${CL}"
+echo -e "$ADDITIONAL_INFO"
+echo -e "\n"
