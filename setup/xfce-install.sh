@@ -138,6 +138,46 @@ autologin-session=xfce
 EOF
 msg_ok "Configured lightdm for XFCE"
 
+msg_info "Setting up device detection for xorg"
+apt-get install -y xserver-xorg-input-evdev &>/dev/null
+# Following script needs to be executed before Xorg starts to enumerate all input devices
+mkdir -p /etc/X11/xorg.conf.d
+cat >/usr/local/bin/preX-populate-input.sh << '__EOF__'
+#!/usr/bin/env bash
+
+### Creates config file for X with all currently present input devices
+#   after connecting new device restart X (systemctl restart lightdm)
+######################################################################
+
+cat >/etc/X11/xorg.conf.d/10-lxc-input.conf << '_EOF_'
+Section "ServerFlags"
+     Option "AutoAddDevices" "False"
+EndSection
+_EOF_
+
+cd /dev/input
+for input in event*
+do
+cat >> /etc/X11/xorg.conf.d/10-lxc-input.conf <<_EOF_
+Section "InputDevice"
+    Identifier "$input"
+    Option "Device" "/dev/input/$input"
+    Option "AutoServerLayout" "true"
+    Driver "evdev"
+EndSection
+_EOF_
+done
+__EOF__
+chmod +x /usr/local/bin/preX-populate-input.sh
+mkdir -p /etc/systemd/system/lightdm.service.d
+cat > /etc/systemd/system/lightdm.service.d/override.conf << '__EOF__'
+[Service]
+ExecStartPre=/bin/sh -c '/usr/local/bin/preX-populate-input.sh'
+SupplementaryGroups=video render input audio tty
+__EOF__
+systemctl daemon-reload
+msg_ok "Set up device detection for xorg"
+
 msg_info "Setting up Kodi autostart in XFCE"
 mkdir -p /home/kodi/.config/autostart
 cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
@@ -163,48 +203,6 @@ ResultActive=yes
 EOF
 
 msg_ok "Set up PolicyKit permissions"
-
-msg_info "Configuring X11 permissions"
-# Create X11 wrapper config to allow console users
-cat <<EOF >/etc/X11/Xwrapper.config
-allowed_users=anybody
-needs_root_rights=yes
-EOF
-
-msg_ok "Configured X11 permissions"
-
-msg_info "Creating input device permissions script"
-# Since udev doesn't run in LXC, we need a startup script to fix permissions
-cat <<'EOF' >/usr/local/bin/fix-input-permissions.sh
-#!/bin/bash
-# Fix input device permissions for kodi user
-INPUT_GID=$(getent group input | cut -d: -f3)
-if [ -d /dev/input ]; then
-    chown -R root:$INPUT_GID /dev/input/* 2>/dev/null
-    chmod -R 660 /dev/input/* 2>/dev/null
-fi
-EOF
-chmod +x /usr/local/bin/fix-input-permissions.sh
-
-# Create systemd service to run at boot
-cat <<EOF >/etc/systemd/system/fix-input-permissions.service
-[Unit]
-Description=Fix input device permissions for kodi user
-After=local-fs.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/fix-input-permissions.sh
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable fix-input-permissions.service &>/dev/null
-
-msg_ok "Created input device permissions script"
 
 msg_info "Setting up PulseAudio"
 apt-get install -y pulseaudio pulseaudio-utils pavucontrol alsa-utils &>/dev/null
