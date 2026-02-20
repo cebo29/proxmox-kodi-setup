@@ -38,54 +38,6 @@ else
     msg_ok "Kodi user already exists"
 fi
 
-# Use environment variable if set, otherwise prompt
-if [ -z "$KODI_METHOD" ]; then
-    echo -e "\n${GN}=== Kodi Installation Method ===${CL}"
-    echo -e "Choose how to install Kodi:"
-    echo -e "  ${GN}1.${CL} PPA (team-xbmc) - Kodi 20.x (older, but integrates better)"
-    echo -e "  ${GN}2.${CL} Flatpak (Flathub) - Kodi 21.x (latest version)"
-    echo -e ""
-    echo -e "${YW}Note:${CL} The official PPA is no longer actively maintained."
-    echo -e "Flatpak has the latest version but runs in a sandbox."
-    echo -e ""
-    
-    while true; do
-        read -p "Select installation method [1-2]: " KODI_METHOD
-        if [ "$KODI_METHOD" = "1" ] || [ "$KODI_METHOD" = "2" ]; then
-            break
-        else
-            echo -e "${RD}Invalid choice. Please enter 1 or 2.${CL}"
-        fi
-    done
-fi
-
-if [ "$KODI_METHOD" = "1" ]; then
-    msg_info "Installing Kodi from PPA"
-    apt-get install -y software-properties-common &>/dev/null
-    add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
-    apt-get update &>/dev/null
-    apt-get install -y kodi &>/dev/null
-    if command -v kodi &> /dev/null; then
-        KODI_EXEC="kodi"
-        msg_ok "Installed Kodi from PPA (version 20.x)"
-    else
-        msg_error "Kodi installation failed"
-        exit 1
-    fi
-else
-    msg_info "Installing Kodi via Flatpak"
-    apt-get install -y flatpak &>/dev/null
-    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
-    flatpak install -y flathub tv.kodi.Kodi &>/dev/null
-    if flatpak list | grep -q "tv.kodi.Kodi"; then
-        KODI_EXEC="flatpak run tv.kodi.Kodi"
-        msg_ok "Installed Kodi via Flatpak (version 21.x)"
-    else
-        msg_error "Kodi Flatpak installation failed"
-        exit 1
-    fi
-fi
-
 msg_info "Setting password for kodi user"
 if [ -n "$KODI_PASS" ]; then
     echo "kodi:$KODI_PASS" | chpasswd
@@ -100,11 +52,71 @@ msg_info "Adding kodi user to sudo and device access groups"
 usermod -aG sudo,audio,input,video,render kodi
 msg_ok "Added kodi user to sudo and device access groups"
 
-# Use environment variable if set, otherwise prompt for software
-if [ -z "$INSTALL_APPS" ]; then
+# Parse INSTALL_APPS to check for Kodi
+KODI_EXEC=""
+if [ -n "$INSTALL_APPS" ]; then
+    if [[ "$INSTALL_APPS" == *"KODI_PPA"* ]]; then
+        msg_info "Installing Kodi from PPA"
+        apt-get install -y software-properties-common &>/dev/null
+        add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
+        apt-get update &>/dev/null
+        apt-get install -y kodi &>/dev/null
+        if command -v kodi &> /dev/null; then
+            KODI_EXEC="kodi"
+            msg_ok "Installed Kodi from PPA (version 20.x)"
+        else
+            msg_error "Kodi installation failed"
+        fi
+    elif [[ "$INSTALL_APPS" == *"KODI_FLATPAK"* ]]; then
+        msg_info "Installing Kodi via Flatpak"
+        apt-get install -y flatpak &>/dev/null
+        flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
+        flatpak install -y flathub tv.kodi.Kodi &>/dev/null
+        if flatpak list | grep -q "tv.kodi.Kodi"; then
+            KODI_EXEC="flatpak run tv.kodi.Kodi"
+            msg_ok "Installed Kodi via Flatpak (version 21.x)"
+        else
+            msg_error "Kodi Flatpak installation failed"
+        fi
+    fi
+    
+    # Parse other apps
+    [[ "$INSTALL_APPS" == *"FIREFOX"* ]] && INSTALL_FIREFOX="y" || INSTALL_FIREFOX="n"
+    [[ "$INSTALL_APPS" == *"BRAVE"* ]] && INSTALL_BRAVE="y" || INSTALL_BRAVE="n"
+    [[ "$INSTALL_APPS" == *"CHROME"* ]] && INSTALL_CHROME="y" || INSTALL_CHROME="n"
+    [[ "$INSTALL_APPS" == *"LIBREOFFICE"* ]] && INSTALL_LIBREOFFICE="y" || INSTALL_LIBREOFFICE="n"
+    [[ "$INSTALL_APPS" == *"VLC"* ]] && INSTALL_VLC="y" || INSTALL_VLC="n"
+    [[ "$INSTALL_APPS" == *"GIMP"* ]] && INSTALL_GIMP="y" || INSTALL_GIMP="n"
+    [[ "$INSTALL_APPS" == *"STEAM"* ]] && INSTALL_STEAM="y" || INSTALL_STEAM="n"
+else
+    # Fallback to interactive prompts if INSTALL_APPS not set
     echo -e "\n${GN}=== Optional Software Installation ===${CL}"
     echo -e "Select which applications you want to install:"
     echo ""
+    
+    # Ask about Kodi first
+    read -p "Install Kodi? (1=PPA/2=Flatpak/n=No): " -n 1 -r KODI_CHOICE
+    echo
+    if [ "$KODI_CHOICE" = "1" ]; then
+        msg_info "Installing Kodi from PPA"
+        apt-get install -y software-properties-common &>/dev/null
+        add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
+        apt-get update &>/dev/null
+        apt-get install -y kodi &>/dev/null
+        if command -v kodi &> /dev/null; then
+            KODI_EXEC="kodi"
+            msg_ok "Installed Kodi from PPA (version 20.x)"
+        fi
+    elif [ "$KODI_CHOICE" = "2" ]; then
+        msg_info "Installing Kodi via Flatpak"
+        apt-get install -y flatpak &>/dev/null
+        flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
+        flatpak install -y flathub tv.kodi.Kodi &>/dev/null
+        if flatpak list | grep -q "tv.kodi.Kodi"; then
+            KODI_EXEC="flatpak run tv.kodi.Kodi"
+            msg_ok "Installed Kodi via Flatpak (version 21.x)"
+        fi
+    fi
     
     # Firefox
     read -p "Install Firefox? (y/n): " -n 1 -r INSTALL_FIREFOX
@@ -135,15 +147,6 @@ if [ -z "$INSTALL_APPS" ]; then
     echo
     
     echo ""
-else
-    # Parse INSTALL_APPS from whiptail checklist output
-    [[ "$INSTALL_APPS" == *"FIREFOX"* ]] && INSTALL_FIREFOX="y" || INSTALL_FIREFOX="n"
-    [[ "$INSTALL_APPS" == *"BRAVE"* ]] && INSTALL_BRAVE="y" || INSTALL_BRAVE="n"
-    [[ "$INSTALL_APPS" == *"CHROME"* ]] && INSTALL_CHROME="y" || INSTALL_CHROME="n"
-    [[ "$INSTALL_APPS" == *"LIBREOFFICE"* ]] && INSTALL_LIBREOFFICE="y" || INSTALL_LIBREOFFICE="n"
-    [[ "$INSTALL_APPS" == *"VLC"* ]] && INSTALL_VLC="y" || INSTALL_VLC="n"
-    [[ "$INSTALL_APPS" == *"GIMP"* ]] && INSTALL_GIMP="y" || INSTALL_GIMP="n"
-    [[ "$INSTALL_APPS" == *"STEAM"* ]] && INSTALL_STEAM="y" || INSTALL_STEAM="n"
 fi
 
 msg_info "Configuring lightdm to boot into XFCE"
@@ -199,16 +202,20 @@ systemctl daemon-reload
 msg_ok "Set up device detection for xorg"
 
 msg_info "Setting up Kodi autostart in XFCE"
-mkdir -p /home/kodi/.config/autostart
-cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
+if [ -n "$KODI_EXEC" ]; then
+    mkdir -p /home/kodi/.config/autostart
+    cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
 [Desktop Entry]
 Type=Application
 Name=Kodi
 Exec=$KODI_EXEC
 X-XFCE-Autostart-enabled=true
 KODIEOF
-chown -R kodi:kodi /home/kodi/.config
-msg_ok "Set up Kodi autostart"
+    chown -R kodi:kodi /home/kodi/.config
+    msg_ok "Set up Kodi autostart"
+else
+    msg_info "Kodi not installed, skipping autostart setup"
+fi
 
 msg_info "Setting up PolicyKit permissions"
 mkdir -p /etc/polkit-1/localauthority/50-local.d
@@ -863,21 +870,24 @@ msg_info "Installing dependencies"
 apt-get install -y -f &>/dev/null
 msg_ok "Installed dependencies"
 
-msg_info "Setting up Steam auto-start"
-mkdir -p /home/kodi/.config/autostart
-cat <<STEAMSTARTEOF >/home/kodi/.config/autostart/steam.desktop
+# Set up Steam autostart only if requested
+if [ "$STEAM_AUTOSTART" = "yes" ]; then
+    msg_info "Setting up Steam auto-start"
+    mkdir -p /home/kodi/.config/autostart
+    cat <<STEAMSTARTEOF >/home/kodi/.config/autostart/steam.desktop
 [Desktop Entry]
 Type=Application
 Name=Steam
 Exec=/usr/games/steam -silent %U
 X-XFCE-Autostart-enabled=true
 STEAMSTARTEOF
-chown kodi:kodi /home/kodi/.config/autostart/steam.desktop
-msg_ok "Set up Steam auto-start"
+    chown kodi:kodi /home/kodi/.config/autostart/steam.desktop
+    msg_ok "Set up Steam auto-start"
+else
+    msg_info "Steam autostart disabled (can launch manually)"
+fi
 
 echo -e "\n${GN}Steam installation complete!${CL}"
-echo -e "Steam will now auto-start in silent mode when you log into XFCE."
-echo -e "You can launch Steam from the XFCE Applications menu or system tray."
 echo -e "\nThe desktop launcher will now be deleted."
 read -p "Press Enter to exit..."
 
