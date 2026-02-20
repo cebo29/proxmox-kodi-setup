@@ -460,18 +460,20 @@ if [ ${#DEVICES[@]} -eq 0 ]; then
     exit 1
 fi
 
-# Build device list for zenity
-DEVICE_LIST=""
+# Build device list for zenity - using arrays to properly handle spaces
+DEVICE_LIST=()
 for i in "${!DEVICES[@]}"; do
     IFS=',' read -r CARD DEV <<< "${DEVICES[$i]}"
-    DEVICE_LIST="${DEVICE_LIST}FALSE hw:${CARD},${DEV} ${DEVICE_NAMES[$i]} "
+    DEVICE_LIST+=("FALSE")
+    DEVICE_LIST+=("hw:${CARD},${DEV}")
+    DEVICE_LIST+=("${DEVICE_NAMES[$i]}")
 done
 
 # Select device
 SELECTED=$(zenity --list --radiolist --title="Select Audio Device" \
     --text="Choose your audio output device:" \
     --column="Select" --column="Device" --column="Name" \
-    ${DEVICE_LIST} --width=600 --height=400)
+    "${DEVICE_LIST[@]}" --width=600 --height=400)
 
 if [ -z "$SELECTED" ]; then
     zenity --info --title="Cancelled" --text="Audio configuration cancelled." --width=300
