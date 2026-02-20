@@ -203,16 +203,21 @@ msg_ok "Set up device detection for xorg"
 
 msg_info "Setting up Kodi autostart in XFCE"
 if [ -n "$KODI_EXEC" ]; then
-    mkdir -p /home/kodi/.config/autostart
-    cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
+    # Check if autostart is enabled (default to yes)
+    if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
+        mkdir -p /home/kodi/.config/autostart
+        cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
 [Desktop Entry]
 Type=Application
 Name=Kodi
 Exec=$KODI_EXEC
 X-XFCE-Autostart-enabled=true
 KODIEOF
-    chown -R kodi:kodi /home/kodi/.config
-    msg_ok "Set up Kodi autostart"
+        chown -R kodi:kodi /home/kodi/.config
+        msg_ok "Set up Kodi autostart"
+    else
+        msg_info "Kodi installed but autostart disabled (launch manually from menu)"
+    fi
 else
     msg_info "Kodi not installed, skipping autostart setup"
 fi
@@ -637,17 +642,21 @@ if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
     apt-get install -y -f &>/dev/null
     msg_ok "Installed Steam"
     
-    # Set up Steam auto-start
-    msg_info "Setting up Steam auto-start"
-    cat <<EOF >/home/kodi/.config/autostart/steam.desktop
+    # Set up Steam auto-start if enabled (default to yes)
+    if [ "${STEAM_AUTOSTART:-yes}" = "yes" ]; then
+        msg_info "Setting up Steam auto-start"
+        cat <<EOF >/home/kodi/.config/autostart/steam.desktop
 [Desktop Entry]
 Type=Application
 Name=Steam
 Exec=/usr/games/steam -silent %U
 X-XFCE-Autostart-enabled=true
 EOF
-    chown kodi:kodi /home/kodi/.config/autostart/steam.desktop
-    msg_ok "Set up Steam auto-start"
+        chown kodi:kodi /home/kodi/.config/autostart/steam.desktop
+        msg_ok "Set up Steam auto-start"
+    else
+        msg_info "Steam installed but autostart disabled (launch manually from menu)"
+    fi
 fi
 
 # Create desktop launchers for skipped applications
