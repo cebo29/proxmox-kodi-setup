@@ -63,6 +63,66 @@ if [[ $PVE != 1 ]]; then
    exit
 fi
 }
+
+SETTINGS_FILE="/root/.kodi-lxc-settings.conf"
+
+function save_settings() {
+    cat > "$SETTINGS_FILE" <<EOF
+# Kodi LXC Settings - Last saved $(date)
+var_version="$var_version"
+CT_TYPE="$CT_TYPE"
+PW="$PW"
+CT_ID="$CT_ID"
+HN="$HN"
+DISK_SIZE="$DISK_SIZE"
+CORE_COUNT="$CORE_COUNT"
+RAM_SIZE="$RAM_SIZE"
+BRG="$BRG"
+NET="$NET"
+GATE="$GATE"
+DNS="$DNS"
+MAC="$MAC"
+VLAN="$VLAN"
+INSTALL_MODE="$INSTALL_MODE"
+KODI_METHOD="$KODI_METHOD"
+INSTALL_APPS="$INSTALL_APPS"
+EOF
+    echo -e "${GN}Settings saved to $SETTINGS_FILE${CL}"
+}
+
+function load_settings() {
+    if [ -f "$SETTINGS_FILE" ]; then
+        source "$SETTINGS_FILE"
+        echo -e "${GN}Settings loaded from previous session${CL}"
+        return 0
+    else
+        return 1
+    fi
+}
+
+function show_saved_settings() {
+    echo -e "\n${GN}=== Previously Saved Settings ===${CL}"
+    echo -e "${DGN}Ubuntu Version: ${BGN}$var_version${CL}"
+    echo -e "${DGN}Container Type: ${BGN}$([ "$CT_TYPE" = "1" ] && echo "Unprivileged" || echo "Privileged")${CL}"
+    echo -e "${DGN}Container ID: ${BGN}$CT_ID${CL}"
+    echo -e "${DGN}Hostname: ${BGN}$HN${CL}"
+    echo -e "${DGN}Disk Size: ${BGN}${DISK_SIZE}GB${CL}"
+    echo -e "${DGN}CPU Cores: ${BGN}$CORE_COUNT${CL}"
+    echo -e "${DGN}RAM: ${BGN}${RAM_SIZE}MB${CL}"
+    echo -e "${DGN}Bridge: ${BGN}$BRG${CL}"
+    echo -e "${DGN}IP: ${BGN}$NET${CL}"
+    echo -e "${DGN}Gateway: ${BGN}${GATE:-Default}${CL}"
+    echo -e "${DGN}DNS: ${BGN}${DNS:-Default}${CL}"
+    echo -e "${DGN}MAC: ${BGN}${MAC:-Default}${CL}"
+    echo -e "${DGN}VLAN: ${BGN}${VLAN:-Default}${CL}"
+    echo -e "${DGN}Install Mode: ${BGN}$INSTALL_MODE${CL}"
+    if [ "$INSTALL_MODE" = "xfce" ]; then
+        echo -e "${DGN}Kodi Method: ${BGN}$([ "$KODI_METHOD" = "1" ] && echo "PPA" || echo "Flatpak")${CL}"
+        echo -e "${DGN}Apps: ${BGN}${INSTALL_APPS:-None}${CL}"
+    fi
+    echo ""
+}
+
 function default_settings() {
                 echo -e "${DGN}Using ${var_os} Version: ${BGN}${var_version}${CL}"
 
@@ -257,6 +317,14 @@ else
     echo -e "${GN}Selected: Standalone Kodi${CL}"
 fi
 
+# Ask if user wants to save settings
+if (whiptail --title "SAVE SETTINGS" --yesno "Would you like to save these settings for future use?\n\nSaved settings can be loaded next time you run this script." 10 58); then
+    SAVE_SETTINGS=true
+    echo -e "${GN}Settings will be saved after successful creation${CL}"
+else
+    SAVE_SETTINGS=false
+fi
+
 if (whiptail --title "ADVANCED SETTINGS COMPLETE" --yesno "Ready to create ${APP} LXC?" --no-button Do-Over 10 58); then
     echo -e "${RD}Creating a ${APP} LXC using the above advanced settings${CL}"
 else
@@ -268,6 +336,26 @@ fi
 }
 
 function start_script() {
+# Check if saved settings exist
+if [ -f "$SETTINGS_FILE" ]; then
+    if (whiptail --title "SAVED SETTINGS FOUND" --yesno "Previous settings found. Would you like to:\n\nYes = Load previous settings\nNo  = Start with fresh settings" 12 58); then
+        load_settings
+        show_saved_settings
+        
+        if (whiptail --title "USE SAVED SETTINGS?" --yesno "Use these saved settings?" 10 58); then
+            echo -e "${GN}Using saved settings${CL}"
+            # Settings already loaded, just need to get next container ID
+            CT_ID=$(pvesh get /cluster/nextid)
+            echo -e "${DGN}Using Next Available Container ID: ${BGN}$CT_ID${CL}"
+            
+            # Skip to container creation
+            return 0
+        else
+            echo -e "${YW}Starting fresh configuration...${CL}"
+        fi
+    fi
+fi
+
 if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Advanced 10 58); then
   header_info
   echo -e "${BL}Using Default Settings${CL}"
@@ -324,6 +412,14 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
   else
       INSTALL_MODE="standalone"
       echo -e "${GN}Selected: Standalone Kodi${CL}"
+  fi
+  
+  # Ask if user wants to save settings
+  if (whiptail --title "SAVE SETTINGS" --yesno "Would you like to save these settings for future use?\n\nSaved settings can be loaded next time you run this script." 10 58); then
+      SAVE_SETTINGS=true
+      echo -e "${GN}Settings will be saved after successful creation${CL}"
+  else
+      SAVE_SETTINGS=false
   fi
 else
   header_info
@@ -444,6 +540,12 @@ fi
 
 IP=$(pct exec $CTID ip a s dev eth0 | sed -n '/inet / s/\// /p' | awk '{print $2}')
 pct set $CTID -description "# ${APP} LXC - ${INSTALL_MODE} mode"
+
+# Save settings if user requested it
+if [ "$SAVE_SETTINGS" = true ]; then
+    save_settings
+fi
+
 msg_ok "Completed Successfully!\n"
 
 echo -e "\n${GN}╔════════════════════════════════════════════════╗${CL}"
