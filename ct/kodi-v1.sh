@@ -84,7 +84,6 @@ DNS="$DNS"
 MAC="$MAC"
 VLAN="$VLAN"
 INSTALL_MODE="$INSTALL_MODE"
-KODI_METHOD="$KODI_METHOD"
 INSTALL_APPS="$INSTALL_APPS"
 EOF
     echo -e "${GN}Settings saved to $SETTINGS_FILE${CL}"
@@ -117,7 +116,6 @@ function show_saved_settings() {
     echo -e "${DGN}VLAN: ${BGN}${VLAN:-Default}${CL}"
     echo -e "${DGN}Install Mode: ${BGN}$INSTALL_MODE${CL}"
     if [ "$INSTALL_MODE" = "xfce" ]; then
-        echo -e "${DGN}Kodi Method: ${BGN}$([ "$KODI_METHOD" = "1" ] && echo "PPA" || echo "Flatpak")${CL}"
         echo -e "${DGN}Apps: ${BGN}${INSTALL_APPS:-None}${CL}"
     fi
     echo ""
@@ -268,17 +266,6 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     INSTALL_MODE="xfce"
     echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
     
-    # XFCE-specific configuration prompts
-    KODI_METHOD=$(whiptail --title "KODI VERSION" --radiolist "Choose Kodi installation method:" 12 68 2 \
-        "1" "PPA (Kodi 20.x - older, better integration)" ON \
-        "2" "Flatpak (Kodi 21.x - latest version)" OFF \
-        3>&1 1>&2 2>&3)
-    if [ "$KODI_METHOD" = "1" ]; then
-        echo -e "${GN}Using: Kodi from PPA (version 20.x)${CL}"
-    else
-        echo -e "${GN}Using: Kodi from Flatpak (version 21.x)${CL}"
-    fi
-    
     # Password for kodi user
     KODI_PASS=$(whiptail --inputbox "Set password for kodi user:\n\n(Leave empty or cancel to use default password: kodi)" 10 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
     exitstatus=$?
@@ -298,9 +285,11 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         echo -e "${YW}Audio configuration will be skipped${CL}"
     fi
     
-    # Optional software selection
+    # Optional software selection (including Kodi)
     APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-        "Select applications to install:" 16 68 7 \
+        "Select applications to install:" 18 68 9 \
+        "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
+        "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
         "FIREFOX" "Firefox web browser" OFF \
         "BRAVE" "Brave web browser" OFF \
         "CHROME" "Google Chrome" OFF \
@@ -310,10 +299,42 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         "STEAM" "Steam gaming platform" OFF \
         3>&1 1>&2 2>&3)
     
+    # Validate Kodi selection (can't install both)
+    if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
+        whiptail --msgbox "Error: Cannot install both Kodi versions.\n\nPlease select only one Kodi option." 10 58 --title "CONFLICTING SELECTION"
+        # Restart from software selection
+        continue
+    fi
+    
+    # Ask about autostart for Kodi if selected
+    KODI_AUTOSTART="no"
+    if [[ "$APPS" == *"KODI_PPA"* ]] || [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
+        if (whiptail --title "KODI AUTOSTART" --yesno "Start Kodi automatically on boot?" 8 58); then
+            KODI_AUTOSTART="yes"
+            echo -e "${GN}Kodi will autostart on boot${CL}"
+        else
+            KODI_AUTOSTART="no"
+            echo -e "${YW}Kodi will not autostart (can launch manually)${CL}"
+        fi
+    fi
+    
+    # Ask about autostart for Steam if selected
+    STEAM_AUTOSTART="no"
+    if [[ "$APPS" == *"STEAM"* ]]; then
+        if (whiptail --title "STEAM AUTOSTART" --yesno "Start Steam automatically on boot?" 8 58); then
+            STEAM_AUTOSTART="yes"
+            echo -e "${GN}Steam will autostart on boot${CL}"
+        else
+            STEAM_AUTOSTART="no"
+            echo -e "${YW}Steam will not autostart (can launch manually)${CL}"
+        fi
+    fi
+    
     # Export variables for xfce-install.sh
-    export KODI_METHOD
     export KODI_PASS
     export CONFIGURE_AUDIO
+    export KODI_AUTOSTART
+    export STEAM_AUTOSTART
     export INSTALL_APPS="$APPS"
 else
     INSTALL_MODE="standalone"
@@ -368,17 +389,6 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
       INSTALL_MODE="xfce"
       echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
       
-      # XFCE-specific configuration prompts
-      KODI_METHOD=$(whiptail --title "KODI VERSION" --radiolist "Choose Kodi installation method:" 12 68 2 \
-          "1" "PPA (Kodi 20.x - older, better integration)" ON \
-          "2" "Flatpak (Kodi 21.x - latest version)" OFF \
-          3>&1 1>&2 2>&3)
-      if [ "$KODI_METHOD" = "1" ]; then
-          echo -e "${GN}Using: Kodi from PPA (version 20.x)${CL}"
-      else
-          echo -e "${GN}Using: Kodi from Flatpak (version 21.x)${CL}"
-      fi
-      
       # Password for kodi user
       KODI_PASS=$(whiptail --inputbox "Set password for kodi user:\n\n(Leave empty or cancel to use default password: kodi)" 10 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
       exitstatus=$?
@@ -398,9 +408,11 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           echo -e "${YW}Audio configuration will be skipped${CL}"
       fi
       
-      # Optional software selection
+      # Optional software selection (including Kodi)
       APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-          "Select applications to install:" 16 68 7 \
+          "Select applications to install:" 18 68 9 \
+          "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
+          "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
           "FIREFOX" "Firefox web browser" OFF \
           "BRAVE" "Brave web browser" OFF \
           "CHROME" "Google Chrome" OFF \
@@ -410,10 +422,42 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           "STEAM" "Steam gaming platform" OFF \
           3>&1 1>&2 2>&3)
       
+      # Validate Kodi selection (can't install both)
+      if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
+          whiptail --msgbox "Error: Cannot install both Kodi versions.\n\nPlease select only one Kodi option." 10 58 --title "CONFLICTING SELECTION"
+          # Restart from software selection
+          continue
+      fi
+      
+      # Ask about autostart for Kodi if selected
+      KODI_AUTOSTART="no"
+      if [[ "$APPS" == *"KODI_PPA"* ]] || [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
+          if (whiptail --title "KODI AUTOSTART" --yesno "Start Kodi automatically on boot?" 8 58); then
+              KODI_AUTOSTART="yes"
+              echo -e "${GN}Kodi will autostart on boot${CL}"
+          else
+              KODI_AUTOSTART="no"
+              echo -e "${YW}Kodi will not autostart (can launch manually)${CL}"
+          fi
+      fi
+      
+      # Ask about autostart for Steam if selected
+      STEAM_AUTOSTART="no"
+      if [[ "$APPS" == *"STEAM"* ]]; then
+          if (whiptail --title "STEAM AUTOSTART" --yesno "Start Steam automatically on boot?" 8 58); then
+              STEAM_AUTOSTART="yes"
+              echo -e "${GN}Steam will autostart on boot${CL}"
+          else
+              STEAM_AUTOSTART="no"
+              echo -e "${YW}Steam will not autostart (can launch manually)${CL}"
+          fi
+      fi
+      
       # Export variables for xfce-install.sh
-      export KODI_METHOD
       export KODI_PASS
       export CONFIGURE_AUDIO
+      export KODI_AUTOSTART
+      export STEAM_AUTOSTART
       export INSTALL_APPS="$APPS"
   else
       INSTALL_MODE="standalone"
@@ -535,9 +579,9 @@ msg_ok "Started LXC Container"
 
 # Run the appropriate installation script based on earlier selection
 if [ "$INSTALL_MODE" = "xfce" ]; then
-    lxc-attach -n $CTID -- bash -c "export KODI_METHOD='$KODI_METHOD' KODI_PASS='$KODI_PASS' CONFIGURE_AUDIO='$CONFIGURE_AUDIO' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
-    SUCCESS_MSG="XFCE Desktop with Kodi installed successfully!"
-    ADDITIONAL_INFO="• Kodi auto-starts on boot\n• Exit Kodi to access XFCE desktop\n• Volume control in panel works\n• Steam auto-starts if installed"
+    lxc-attach -n $CTID -- bash -c "export KODI_PASS='$KODI_PASS' CONFIGURE_AUDIO='$CONFIGURE_AUDIO' KODI_AUTOSTART='$KODI_AUTOSTART' STEAM_AUTOSTART='$STEAM_AUTOSTART' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+    SUCCESS_MSG="XFCE Desktop installed successfully!"
+    ADDITIONAL_INFO="• Custom desktop environment\n• All selected applications installed\n• Audio configuration desktop shortcut available"
 else
     lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/$var_install.sh)" || exit
     SUCCESS_MSG="Standalone Kodi installed successfully!"
