@@ -85,6 +85,10 @@ MAC="$MAC"
 VLAN="$VLAN"
 INSTALL_MODE="$INSTALL_MODE"
 INSTALL_APPS="$INSTALL_APPS"
+KODI_PASS="$KODI_PASS"
+CONFIGURE_AUDIO="$CONFIGURE_AUDIO"
+KODI_AUTOSTART="$KODI_AUTOSTART"
+STEAM_AUTOSTART="$STEAM_AUTOSTART"
 EOF
     echo -e "${GN}Settings saved to $SETTINGS_FILE${CL}"
 }
@@ -376,6 +380,18 @@ if [ -f "$SETTINGS_FILE" ]; then
             # Settings already loaded, just need to get next container ID
             CT_ID=$(pvesh get /cluster/nextid)
             echo -e "${DGN}Using Next Available Container ID: ${BGN}$CT_ID${CL}"
+            
+            # Export XFCE variables if in XFCE mode
+            if [ "$INSTALL_MODE" = "xfce" ]; then
+                export KODI_PASS
+                export CONFIGURE_AUDIO
+                export KODI_AUTOSTART
+                export STEAM_AUTOSTART
+                export INSTALL_APPS
+            fi
+            
+            # Don't save again - already using saved settings
+            SAVE_SETTINGS=false
             
             # Skip to container creation
             return 0
