@@ -340,7 +340,7 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     export CONFIGURE_AUDIO
     export KODI_AUTOSTART
     export STEAM_AUTOSTART
-    export INSTALL_APPS
+    export INSTALL_APPS="$APPS"
 else
     INSTALL_MODE="standalone"
     echo -e "${GN}Selected: Standalone Kodi${CL}"
