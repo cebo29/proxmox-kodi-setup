@@ -33,8 +33,6 @@ chmod 660 /dev/tty7
 ```
 
 ## XFCE Desktop Environment
-If you would like a desktop env, install xfce with this command:
-```
-bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)"
-```
-You will be prompted to set a password for the user "kodi" and asked if you want to install Steam, Firefox, Brave, Chrome, LibreOffice, VLC, GIMP. If you choose not to install, the script will create desktop launchers for all skipped applications.
+If you would like a desktop env, select it when running the script.
+
+You will be prompted to set a password for the user "kodi" and asked if you want to install Steam, Firefox, Brave, Chrome, LibreOffice, VLC, GIMP. If you choose not to install, the script will create desktop launchers for all skipped applications. You will also be prompted to select audio device and test if they work.
