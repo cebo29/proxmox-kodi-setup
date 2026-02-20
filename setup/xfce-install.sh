@@ -375,12 +375,6 @@ PAEOF
     msg_ok "Configured PulseAudio with auto-detection"
 fi
 
-# Don't auto-suspend when idle
-unload-module module-suspend-on-idle
-PAEOF
-    msg_ok "Configured PulseAudio (auto-detect mode)"
-fi
-
 # Set up XFCE session environment
 cat > /home/kodi/.xprofile <<'XPEOF'
 export DISPLAY=:0
