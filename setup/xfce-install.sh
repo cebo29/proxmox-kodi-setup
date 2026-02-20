@@ -604,7 +604,11 @@ echo -e "\n${GN}=== Installing Selected Applications ===${CL}\n"
 if [[ $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     msg_info "Installing Firefox"
     apt-get install -y firefox &>/dev/null
-    msg_ok "Installed Firefox"
+    if command -v firefox &> /dev/null; then
+        msg_ok "Installed Firefox"
+    else
+        msg_error "Firefox installation failed"
+    fi
 fi
 
 if [[ $INSTALL_BRAVE =~ ^[Yy]$ ]]; then
@@ -614,7 +618,11 @@ if [[ $INSTALL_BRAVE =~ ^[Yy]$ ]]; then
     echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list &>/dev/null
     apt-get update &>/dev/null
     apt-get install -y brave-browser &>/dev/null
-    msg_ok "Installed Brave Browser"
+    if command -v brave-browser &> /dev/null; then
+        msg_ok "Installed Brave Browser"
+    else
+        msg_error "Brave Browser installation failed"
+    fi
 fi
 
 if [[ $INSTALL_CHROME =~ ^[Yy]$ ]]; then
@@ -622,25 +630,41 @@ if [[ $INSTALL_CHROME =~ ^[Yy]$ ]]; then
     wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb &>/dev/null
     apt-get install -y /tmp/chrome.deb &>/dev/null
     rm /tmp/chrome.deb
-    msg_ok "Installed Google Chrome"
+    if command -v google-chrome &> /dev/null; then
+        msg_ok "Installed Google Chrome"
+    else
+        msg_error "Google Chrome installation failed"
+    fi
 fi
 
 if [[ $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]]; then
     msg_info "Installing LibreOffice"
     apt-get install -y libreoffice &>/dev/null
-    msg_ok "Installed LibreOffice"
+    if command -v libreoffice &> /dev/null; then
+        msg_ok "Installed LibreOffice"
+    else
+        msg_error "LibreOffice installation failed"
+    fi
 fi
 
 if [[ $INSTALL_VLC =~ ^[Yy]$ ]]; then
     msg_info "Installing VLC Media Player"
     apt-get install -y vlc &>/dev/null
-    msg_ok "Installed VLC Media Player"
+    if command -v vlc &> /dev/null; then
+        msg_ok "Installed VLC Media Player"
+    else
+        msg_error "VLC Media Player installation failed"
+    fi
 fi
 
 if [[ $INSTALL_GIMP =~ ^[Yy]$ ]]; then
     msg_info "Installing GIMP"
     apt-get install -y gimp &>/dev/null
-    msg_ok "Installed GIMP"
+    if command -v gimp &> /dev/null; then
+        msg_ok "Installed GIMP"
+    else
+        msg_error "GIMP installation failed"
+    fi
 fi
 
 if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
@@ -649,7 +673,11 @@ if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
     apt-get update &>/dev/null
     apt-get install -y steam &>/dev/null
     apt-get install -y -f &>/dev/null
-    msg_ok "Installed Steam"
+    if command -v steam &> /dev/null || [ -f /usr/games/steam ]; then
+        msg_ok "Installed Steam"
+    else
+        msg_error "Steam installation failed"
+    fi
     
     # Set up Steam auto-start if enabled (default to yes)
     if [ "${STEAM_AUTOSTART:-yes}" = "yes" ]; then
