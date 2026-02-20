@@ -435,6 +435,9 @@ fi
 # Create audio configuration script for desktop shortcut
 msg_info "Creating audio configuration desktop shortcut"
 
+# Install zenity for GUI dialogs
+apt-get install -y zenity &>/dev/null
+
 # Create Desktop folder if it doesn't exist
 mkdir -p /home/kodi/Desktop
 
@@ -534,6 +537,9 @@ Categories=Settings;HardwareSettings;
 DESKCONF
 chmod +x /home/kodi/Desktop/Configure-Audio.desktop
 chown kodi:kodi /home/kodi/Desktop/Configure-Audio.desktop
+
+# Mark as trusted in XFCE (allow launching)
+sudo -u kodi gio set /home/kodi/Desktop/Configure-Audio.desktop metadata::trusted true 2>/dev/null || true
 
 msg_ok "Created audio configuration shortcut"
 
