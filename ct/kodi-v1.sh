@@ -280,21 +280,14 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     fi
     
     # Password for kodi user
-    while true; do
-        KODI_PASS=$(whiptail --passwordbox "Set password for kodi user:" 8 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
-        exitstatus=$?
-        if [ $exitstatus != 0 ]; then
-            echo -e "${RD}Password is required${CL}"
-            continue
-        fi
-        KODI_PASS_CONFIRM=$(whiptail --passwordbox "Confirm password:" 8 58 --title "CONFIRM PASSWORD" 3>&1 1>&2 2>&3)
-        if [ "$KODI_PASS" = "$KODI_PASS_CONFIRM" ]; then
-            echo -e "${GN}Password set for kodi user${CL}"
-            break
-        else
-            whiptail --msgbox "Passwords do not match. Please try again." 8 58 --title "ERROR"
-        fi
-    done
+    KODI_PASS=$(whiptail --inputbox "Set password for kodi user:\n\n(Leave empty or cancel to use default password: kodi)" 10 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
+    exitstatus=$?
+    if [ $exitstatus != 0 ] || [ -z "$KODI_PASS" ]; then
+        KODI_PASS="kodi"
+        echo -e "${YW}Using default password: kodi${CL}"
+    else
+        echo -e "${GN}Password set for kodi user${CL}"
+    fi
     
     # Optional software selection
     APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
@@ -377,21 +370,14 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
       fi
       
       # Password for kodi user
-      while true; do
-          KODI_PASS=$(whiptail --passwordbox "Set password for kodi user:" 8 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
-          exitstatus=$?
-          if [ $exitstatus != 0 ]; then
-              echo -e "${RD}Password is required${CL}"
-              continue
-          fi
-          KODI_PASS_CONFIRM=$(whiptail --passwordbox "Confirm password:" 8 58 --title "CONFIRM PASSWORD" 3>&1 1>&2 2>&3)
-          if [ "$KODI_PASS" = "$KODI_PASS_CONFIRM" ]; then
-              echo -e "${GN}Password set for kodi user${CL}"
-              break
-          else
-              whiptail --msgbox "Passwords do not match. Please try again." 8 58 --title "ERROR"
-          fi
-      done
+      KODI_PASS=$(whiptail --inputbox "Set password for kodi user:\n\n(Leave empty or cancel to use default password: kodi)" 10 58 --title "KODI USER PASSWORD" 3>&1 1>&2 2>&3)
+      exitstatus=$?
+      if [ $exitstatus != 0 ] || [ -z "$KODI_PASS" ]; then
+          KODI_PASS="kodi"
+          echo -e "${YW}Using default password: kodi${CL}"
+      else
+          echo -e "${GN}Password set for kodi user${CL}"
+      fi
       
       # Optional software selection
       APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
