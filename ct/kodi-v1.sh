@@ -285,29 +285,31 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         echo -e "${YW}Audio configuration will be skipped${CL}"
     fi
     
-    # Optional software selection (including Kodi)
-    APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-        "Select applications to install:" 18 68 9 \
-        "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
-        "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
-        "FIREFOX" "Firefox web browser" OFF \
-        "BRAVE" "Brave web browser" OFF \
-        "CHROME" "Google Chrome" OFF \
-        "LIBREOFFICE" "LibreOffice suite" OFF \
-        "VLC" "VLC Media Player" OFF \
-        "GIMP" "GIMP Image Editor" OFF \
-        "STEAM" "Steam gaming platform" OFF \
-        3>&1 1>&2 2>&3)
-    
-    # Validate Kodi selection (can't install both)
-    if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
-        whiptail --msgbox "Error: Cannot install both Kodi versions.\n\nPlease select only one Kodi option." 10 58 --title "CONFLICTING SELECTION"
-        # Restart from software selection
-        continue
-    fi
+    # Optional software selection (including Kodi) - with validation loop
+    while true; do
+        APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
+            "Select applications to install:" 18 68 9 \
+            "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
+            "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
+            "FIREFOX" "Firefox web browser" OFF \
+            "BRAVE" "Brave web browser" OFF \
+            "CHROME" "Google Chrome" OFF \
+            "LIBREOFFICE" "LibreOffice suite" OFF \
+            "VLC" "VLC Media Player" OFF \
+            "GIMP" "GIMP Image Editor" OFF \
+            "STEAM" "Steam gaming platform" OFF \
+            3>&1 1>&2 2>&3)
+        
+        # Validate Kodi selection (can't install both)
+        if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
+            whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
+            continue
+        else
+            break
+        fi
+    done
     
     # Ask about autostart for Kodi if selected
-    KODI_AUTOSTART="no"
     if [[ "$APPS" == *"KODI_PPA"* ]] || [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
         if (whiptail --title "KODI AUTOSTART" --yesno "Start Kodi automatically on boot?" 8 58); then
             KODI_AUTOSTART="yes"
@@ -316,10 +318,11 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
             KODI_AUTOSTART="no"
             echo -e "${YW}Kodi will not autostart (can launch manually)${CL}"
         fi
+    else
+        KODI_AUTOSTART="no"
     fi
     
     # Ask about autostart for Steam if selected
-    STEAM_AUTOSTART="no"
     if [[ "$APPS" == *"STEAM"* ]]; then
         if (whiptail --title "STEAM AUTOSTART" --yesno "Start Steam automatically on boot?" 8 58); then
             STEAM_AUTOSTART="yes"
@@ -328,6 +331,8 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
             STEAM_AUTOSTART="no"
             echo -e "${YW}Steam will not autostart (can launch manually)${CL}"
         fi
+    else
+        STEAM_AUTOSTART="no"
     fi
     
     # Export variables for xfce-install.sh
@@ -335,7 +340,7 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     export CONFIGURE_AUDIO
     export KODI_AUTOSTART
     export STEAM_AUTOSTART
-    export INSTALL_APPS="$APPS"
+    export INSTALL_APPS
 else
     INSTALL_MODE="standalone"
     echo -e "${GN}Selected: Standalone Kodi${CL}"
@@ -408,29 +413,31 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           echo -e "${YW}Audio configuration will be skipped${CL}"
       fi
       
-      # Optional software selection (including Kodi)
-      APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-          "Select applications to install:" 18 68 9 \
-          "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
-          "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
-          "FIREFOX" "Firefox web browser" OFF \
-          "BRAVE" "Brave web browser" OFF \
-          "CHROME" "Google Chrome" OFF \
-          "LIBREOFFICE" "LibreOffice suite" OFF \
-          "VLC" "VLC Media Player" OFF \
-          "GIMP" "GIMP Image Editor" OFF \
-          "STEAM" "Steam gaming platform" OFF \
-          3>&1 1>&2 2>&3)
-      
-      # Validate Kodi selection (can't install both)
-      if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
-          whiptail --msgbox "Error: Cannot install both Kodi versions.\n\nPlease select only one Kodi option." 10 58 --title "CONFLICTING SELECTION"
-          # Restart from software selection
-          continue
-      fi
+      # Optional software selection (including Kodi) - with validation loop
+      while true; do
+          APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
+              "Select applications to install:" 18 68 9 \
+              "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
+              "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
+              "FIREFOX" "Firefox web browser" OFF \
+              "BRAVE" "Brave web browser" OFF \
+              "CHROME" "Google Chrome" OFF \
+              "LIBREOFFICE" "LibreOffice suite" OFF \
+              "VLC" "VLC Media Player" OFF \
+              "GIMP" "GIMP Image Editor" OFF \
+              "STEAM" "Steam gaming platform" OFF \
+              3>&1 1>&2 2>&3)
+          
+          # Validate Kodi selection (can't install both)
+          if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
+              whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
+              continue
+          else
+              break
+          fi
+      done
       
       # Ask about autostart for Kodi if selected
-      KODI_AUTOSTART="no"
       if [[ "$APPS" == *"KODI_PPA"* ]] || [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
           if (whiptail --title "KODI AUTOSTART" --yesno "Start Kodi automatically on boot?" 8 58); then
               KODI_AUTOSTART="yes"
@@ -439,10 +446,11 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
               KODI_AUTOSTART="no"
               echo -e "${YW}Kodi will not autostart (can launch manually)${CL}"
           fi
+      else
+          KODI_AUTOSTART="no"
       fi
       
       # Ask about autostart for Steam if selected
-      STEAM_AUTOSTART="no"
       if [[ "$APPS" == *"STEAM"* ]]; then
           if (whiptail --title "STEAM AUTOSTART" --yesno "Start Steam automatically on boot?" 8 58); then
               STEAM_AUTOSTART="yes"
@@ -451,6 +459,8 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
               STEAM_AUTOSTART="no"
               echo -e "${YW}Steam will not autostart (can launch manually)${CL}"
           fi
+      else
+          STEAM_AUTOSTART="no"
       fi
       
       # Export variables for xfce-install.sh
