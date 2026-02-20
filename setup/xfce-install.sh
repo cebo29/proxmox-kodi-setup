@@ -680,6 +680,99 @@ fi
 # Create desktop launchers for skipped applications
 mkdir -p /home/kodi/Desktop
 
+# Kodi installers (PPA and Flatpak) if Kodi wasn't installed
+if [ -z "$KODI_EXEC" ]; then
+    # Kodi PPA installer
+    cat <<'KODIPPAEOF' >/usr/local/bin/install-kodi-ppa.sh
+#!/usr/bin/env bash
+echo "Installing Kodi from PPA (v20.x)..."
+
+# Check and remove Flatpak version if installed
+if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
+    echo "Removing existing Kodi Flatpak installation..."
+    flatpak uninstall -y tv.kodi.Kodi &>/dev/null
+    echo "Flatpak version removed."
+fi
+
+echo "Installing Kodi PPA..."
+apt-get install -y software-properties-common &>/dev/null
+add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
+apt-get update &>/dev/null
+apt-get install -y kodi &>/dev/null
+if command -v kodi &> /dev/null; then
+    echo "Kodi PPA installation complete!"
+    echo "You can launch Kodi from the applications menu."
+else
+    echo "Kodi installation failed!"
+fi
+echo "The desktop launcher will now be deleted."
+read -p "Press Enter to exit..."
+rm -f /home/kodi/Desktop/install-kodi-ppa.desktop
+rm -f /home/kodi/Desktop/install-kodi-flatpak.desktop
+rm -f "$0"
+KODIPPAEOF
+    chmod +x /usr/local/bin/install-kodi-ppa.sh
+    
+    cat <<EOF >/home/kodi/Desktop/install-kodi-ppa.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install Kodi (PPA)
+Comment=Install Kodi v20.x from PPA
+Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-ppa.sh"
+Terminal=false
+Icon=kodi
+Categories=System;
+EOF
+    chmod +x /home/kodi/Desktop/install-kodi-ppa.desktop
+    chown kodi:kodi /home/kodi/Desktop/install-kodi-ppa.desktop
+    
+    # Kodi Flatpak installer
+    cat <<'KODIFLATPAKEOF' >/usr/local/bin/install-kodi-flatpak.sh
+#!/usr/bin/env bash
+echo "Installing Kodi via Flatpak (v21.x)..."
+
+# Check and remove PPA version if installed
+if command -v kodi &> /dev/null; then
+    echo "Removing existing Kodi PPA installation..."
+    apt-get remove -y kodi kodi-bin kodi-data &>/dev/null
+    apt-get autoremove -y &>/dev/null
+    echo "PPA version removed."
+fi
+
+echo "Installing Kodi Flatpak..."
+apt-get install -y flatpak &>/dev/null
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
+flatpak install -y flathub tv.kodi.Kodi &>/dev/null
+if flatpak list | grep -q "tv.kodi.Kodi"; then
+    echo "Kodi Flatpak installation complete!"
+    echo "You can launch Kodi from the applications menu."
+else
+    echo "Kodi Flatpak installation failed!"
+fi
+echo "The desktop launcher will now be deleted."
+read -p "Press Enter to exit..."
+rm -f /home/kodi/Desktop/install-kodi-ppa.desktop
+rm -f /home/kodi/Desktop/install-kodi-flatpak.desktop
+rm -f "$0"
+KODIFLATPAKEOF
+    chmod +x /usr/local/bin/install-kodi-flatpak.sh
+    
+    cat <<EOF >/home/kodi/Desktop/install-kodi-flatpak.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install Kodi (Flatpak)
+Comment=Install Kodi v21.x via Flatpak
+Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-flatpak.sh"
+Terminal=false
+Icon=kodi
+Categories=System;
+EOF
+    chmod +x /home/kodi/Desktop/install-kodi-flatpak.desktop
+    chown kodi:kodi /home/kodi/Desktop/install-kodi-flatpak.desktop
+fi
+
 if [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     cat <<'FIREFOXEOF' >/usr/local/bin/install-firefox.sh
 #!/usr/bin/env bash
@@ -945,20 +1038,36 @@ msg_ok "Restarted lightdm"
 
 echo -e "\n${GN}Setup complete!${CL}"
 echo -e "Your LXC will now:"
-echo -e "  1. Boot into XFCE"
-echo -e "  2. Automatically launch Kodi"
-echo -e "  3. Fall back to XFCE desktop when you exit Kodi"
+echo -e "  1. Boot into XFCE desktop"
+
+# Conditional Kodi autostart message
+if [ -n "$KODI_EXEC" ]; then
+    if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
+        echo -e "  2. Automatically launch Kodi on boot"
+        echo -e "  3. Fall back to XFCE desktop when you exit Kodi"
+    else
+        echo -e "  2. Kodi installed (launch manually from menu)"
+    fi
+else
+    echo -e "  2. No Kodi installed (pure XFCE desktop)"
+fi
+
 echo -e "  4. Allow shutdown/reboot from XFCE menu"
 echo -e "  5. Kodi user has full sudo access"
-echo -e "  6. PulseAudio volume control works in XFCE panel"
-echo -e "  7. XFCE panel auto-restarts when exiting Kodi"
+echo -e "  6. ALSA mixer volume control via desktop shortcut"
 
+# Conditional Steam message
 if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
-    echo -e "  8. Steam auto-starts in silent mode"
+    if [ "${STEAM_AUTOSTART:-yes}" = "yes" ]; then
+        echo -e "  7. Steam auto-starts in silent mode"
+    else
+        echo -e "  7. Steam installed (launch manually from menu)"
+    fi
 fi
 
 # Count skipped apps
 SKIPPED=0
+[ -z "$KODI_EXEC" ] && ((SKIPPED+=2))  # Count both Kodi installers
 [[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
@@ -968,19 +1077,17 @@ SKIPPED=0
 [[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
 
 if [ $SKIPPED -gt 0 ]; then
-    ITEM_NUM=8
-    [[ $INSTALL_STEAM =~ ^[Yy]$ ]] && ITEM_NUM=9
-    echo -e "  ${ITEM_NUM}. ${SKIPPED} app installer(s) available on desktop for later installation"
+    echo -e "  8. ${SKIPPED} app installer(s) available on desktop for later installation"
 fi
 
 if [ "$SKIP_AUDIO" = false ]; then
     echo -e "\n${GN}Audio Configuration:${CL}"
     echo -e "  Device: hw:${SELECTED_CARD},${SELECTED_DEV} - ${DEVICE_NAMES[$SELECTED_INDEX]}"
     echo -e "  PulseAudio configured with this device as default"
-    echo -e "  Volume control in XFCE panel will use this device"
+    echo -e "  Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
 else
     echo -e "\n${YW}Audio Configuration:${CL}"
-    echo -e "  Using PulseAudio auto-detection mode"
-    echo -e "  You may need to manually configure audio devices later"
-    echo -e "  Edit /home/kodi/.config/pulse/default.pa if needed"
+    echo -e "  Audio not configured during installation"
+    echo -e "  Use 'Configure Audio' desktop shortcut to set up audio"
+    echo -e "  Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
 fi
