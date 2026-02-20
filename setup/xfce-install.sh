@@ -160,36 +160,39 @@ msg_ok "Configured lightdm for XFCE"
 
 msg_info "Setting up device detection for xorg"
 apt-get install -y xserver-xorg-input-evdev &>/dev/null
-# Create InputClass rules to use evdev driver for input devices
+# Following script needs to be executed before Xorg starts to enumerate all input devices
 mkdir -p /etc/X11/xorg.conf.d
-cat > /etc/X11/xorg.conf.d/10-lxc-input.conf << '__EOF__'
-# Use evdev driver for all input devices
-Section "InputClass"
-    Identifier "evdev keyboard catchall"
-    MatchIsKeyboard "on"
-    MatchDevicePath "/dev/input/event*"
-    Driver "evdev"
-EndSection
+cat >/usr/local/bin/preX-populate-input.sh << '__EOF__'
+#!/usr/bin/env bash
 
-Section "InputClass"
-    Identifier "evdev mouse catchall"
-    MatchIsPointer "on"
-    MatchDevicePath "/dev/input/event*"
-    Driver "evdev"
-EndSection
+### Creates config file for X with all currently present input devices
+#   after connecting new device restart X (systemctl restart lightdm)
+######################################################################
 
-Section "InputClass"
-    Identifier "evdev touchpad catchall"
-    MatchIsTouchpad "on"
-    MatchDevicePath "/dev/input/event*"
+cat >/etc/X11/xorg.conf.d/10-lxc-input.conf << '_EOF_'
+Section "ServerFlags"
+     Option "AutoAddDevices" "False"
+EndSection
+_EOF_
+
+cd /dev/input
+for input in event*
+do
+cat >> /etc/X11/xorg.conf.d/10-lxc-input.conf <<_EOF_
+Section "InputDevice"
+    Identifier "$input"
+    Option "Device" "/dev/input/$input"
+    Option "AutoServerLayout" "true"
     Driver "evdev"
 EndSection
+_EOF_
+done
 __EOF__
-
-# Add supplementary groups to lightdm service for device access
+chmod +x /usr/local/bin/preX-populate-input.sh
 mkdir -p /etc/systemd/system/lightdm.service.d
 cat > /etc/systemd/system/lightdm.service.d/override.conf << '__EOF__'
 [Service]
+ExecStartPre=/bin/sh -c '/usr/local/bin/preX-populate-input.sh'
 SupplementaryGroups=video render input audio tty
 __EOF__
 systemctl daemon-reload
