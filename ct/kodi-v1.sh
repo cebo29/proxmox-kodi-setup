@@ -289,6 +289,15 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         echo -e "${GN}Password set for kodi user${CL}"
     fi
     
+    # Ask about audio configuration
+    if (whiptail --title "AUDIO CONFIGURATION" --yesno "Would you like to configure audio device during installation?\n\nYes = Configure audio now (with device testing)\nNo  = Skip for now (use desktop shortcut later)" 12 58); then
+        CONFIGURE_AUDIO="yes"
+        echo -e "${GN}Will configure audio during installation${CL}"
+    else
+        CONFIGURE_AUDIO="no"
+        echo -e "${YW}Audio configuration will be skipped${CL}"
+    fi
+    
     # Optional software selection
     APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
         "Select applications to install:" 16 68 7 \
@@ -304,6 +313,7 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     # Export variables for xfce-install.sh
     export KODI_METHOD
     export KODI_PASS
+    export CONFIGURE_AUDIO
     export INSTALL_APPS="$APPS"
 else
     INSTALL_MODE="standalone"
@@ -379,6 +389,15 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           echo -e "${GN}Password set for kodi user${CL}"
       fi
       
+      # Ask about audio configuration
+      if (whiptail --title "AUDIO CONFIGURATION" --yesno "Would you like to configure audio device during installation?\n\nYes = Configure audio now (with device testing)\nNo  = Skip for now (use desktop shortcut later)" 12 58); then
+          CONFIGURE_AUDIO="yes"
+          echo -e "${GN}Will configure audio during installation${CL}"
+      else
+          CONFIGURE_AUDIO="no"
+          echo -e "${YW}Audio configuration will be skipped${CL}"
+      fi
+      
       # Optional software selection
       APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
           "Select applications to install:" 16 68 7 \
@@ -394,6 +413,7 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
       # Export variables for xfce-install.sh
       export KODI_METHOD
       export KODI_PASS
+      export CONFIGURE_AUDIO
       export INSTALL_APPS="$APPS"
   else
       INSTALL_MODE="standalone"
@@ -515,7 +535,7 @@ msg_ok "Started LXC Container"
 
 # Run the appropriate installation script based on earlier selection
 if [ "$INSTALL_MODE" = "xfce" ]; then
-    lxc-attach -n $CTID -- bash -c "export KODI_METHOD='$KODI_METHOD' KODI_PASS='$KODI_PASS' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+    lxc-attach -n $CTID -- bash -c "export KODI_METHOD='$KODI_METHOD' KODI_PASS='$KODI_PASS' CONFIGURE_AUDIO='$CONFIGURE_AUDIO' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE Desktop with Kodi installed successfully!"
     ADDITIONAL_INFO="• Kodi auto-starts on boot\n• Exit Kodi to access XFCE desktop\n• Volume control in panel works\n• Steam auto-starts if installed"
 else
