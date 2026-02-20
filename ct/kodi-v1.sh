@@ -381,6 +381,12 @@ if [ -f "$SETTINGS_FILE" ]; then
             CT_ID=$(pvesh get /cluster/nextid)
             echo -e "${DGN}Using Next Available Container ID: ${BGN}$CT_ID${CL}"
             
+            # Set defaults for XFCE variables if they don't exist (old saved settings compatibility)
+            KODI_PASS="${KODI_PASS:-kodi}"
+            CONFIGURE_AUDIO="${CONFIGURE_AUDIO:-no}"
+            KODI_AUTOSTART="${KODI_AUTOSTART:-yes}"
+            STEAM_AUTOSTART="${STEAM_AUTOSTART:-yes}"
+            
             # Export XFCE variables if in XFCE mode
             if [ "$INSTALL_MODE" = "xfce" ]; then
                 export KODI_PASS
