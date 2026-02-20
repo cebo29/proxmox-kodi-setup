@@ -124,6 +124,7 @@ EOF
 msg_ok "Updated xsession"
 
 msg_info "Setting up autologin"
+mkdir -p /etc/lightdm/lightdm.conf.d
 cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
 [Seat:*]
 autologin-user=kodi
