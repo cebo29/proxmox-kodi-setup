@@ -574,31 +574,9 @@ while true; do
         sleep 2
     done
     
-    # Kodi just exited, restart the panel and PulseAudio
+    # Kodi just exited, restart the panel with correct environment
     sleep 1
-    
-    # Find existing xfce4-session process to get proper environment
-    XFCE_PID=$(pgrep -u kodi xfce4-session | head -1)
-    
-    if [ -n "$XFCE_PID" ]; then
-        # Extract environment from existing XFCE session
-        DBUS_ADDR=$(grep -z DBUS_SESSION_BUS_ADDRESS /proc/$XFCE_PID/environ | cut -d= -f2-)
-        DISPLAY_VAL=$(grep -z DISPLAY /proc/$XFCE_PID/environ | cut -d= -f2-)
-        XDG_DIR=$(grep -z XDG_RUNTIME_DIR /proc/$XFCE_PID/environ | cut -d= -f2-)
-        
-        # Restart PulseAudio first
-        sudo -u kodi \
-            DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" \
-            XDG_RUNTIME_DIR="$XDG_DIR" \
-            bash -c "pulseaudio -k 2>/dev/null; sleep 1; pulseaudio --start"
-        
-        # Then restart panel with proper environment
-        sudo -u kodi \
-            DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" \
-            DISPLAY="$DISPLAY_VAL" \
-            XDG_RUNTIME_DIR="$XDG_DIR" \
-            bash -c "killall xfce4-panel 2>/dev/null; xfce4-panel &"
-    fi
+    su - kodi -c "DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 killall xfce4-panel; DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 xfce4-panel &"
     
     # Wait a bit before monitoring again
     sleep 5
