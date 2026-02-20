@@ -10,6 +10,15 @@ CROSS="${RD}✗${CL}"
 BFR="\\r\\033[K"
 HOLD="-"
 
+# Initialize app installation variables with defaults
+INSTALL_FIREFOX="${INSTALL_FIREFOX:-n}"
+INSTALL_BRAVE="${INSTALL_BRAVE:-n}"
+INSTALL_CHROME="${INSTALL_CHROME:-n}"
+INSTALL_LIBREOFFICE="${INSTALL_LIBREOFFICE:-n}"
+INSTALL_VLC="${INSTALL_VLC:-n}"
+INSTALL_GIMP="${INSTALL_GIMP:-n}"
+INSTALL_STEAM="${INSTALL_STEAM:-n}"
+
 function msg_info() {
     local msg="$1"
     echo -ne " ${HOLD} ${YW}${msg}..."
