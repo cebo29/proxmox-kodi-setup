@@ -228,9 +228,18 @@ msg_info "Setting up PulseAudio"
 apt-get install -y pulseaudio pulseaudio-utils pavucontrol alsa-utils &>/dev/null
 msg_ok "Installed PulseAudio packages"
 
-# Detect audio devices
-echo -e "\n${GN}=== Audio Device Detection ===${CL}"
-echo -e "Detecting available audio playback devices...\n"
+# Ask if user wants to configure audio now
+echo -e "\n${GN}=== Audio Device Configuration ===${CL}"
+echo -e "${YW}Would you like to configure audio device now?${CL}"
+echo -e "You can skip this and configure it later from the desktop shortcut."
+echo ""
+read -p "Configure audio now? (y/n): " -n 1 -r CONFIGURE_AUDIO_NOW
+echo ""
+
+if [[ $CONFIGURE_AUDIO_NOW =~ ^[Yy]$ ]]; then
+    # Detect audio devices
+    echo -e "\n${GN}=== Audio Device Detection ===${CL}"
+    echo -e "Detecting available audio playback devices...\n"
 
 # Get list of playback devices
 mapfile -t DEVICES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card \([0-9]\+\):.*device \([0-9]\+\):.*/\1,\2/')
@@ -374,6 +383,127 @@ unload-module module-suspend-on-idle
 PAEOF
     msg_ok "Configured PulseAudio with auto-detection"
 fi
+
+else
+    # User chose to skip audio configuration
+    echo -e "${YW}Skipping audio configuration. You can configure it later using the desktop shortcut.${CL}"
+    SKIP_AUDIO=true
+    
+    # Create basic PulseAudio config
+    msg_info "Setting up basic PulseAudio configuration"
+    mkdir -p /home/kodi/.config/pulse
+    cat > /home/kodi/.config/pulse/default.pa <<'PAEOF'
+#!/usr/bin/pulseaudio -nF
+
+# Include the default PulseAudio config
+.include /etc/pulse/default.pa
+
+# Don't auto-suspend when idle
+unload-module module-suspend-on-idle
+PAEOF
+    msg_ok "Basic PulseAudio configured"
+fi
+
+# Create audio configuration script for desktop shortcut
+msg_info "Creating audio configuration desktop shortcut"
+cat > /usr/local/bin/configure-audio.sh <<'AUDIOCONF'
+#!/bin/bash
+
+YW="\033[33m"
+GN="\033[1;92m"
+RD="\033[01;31m"
+CL="\033[m"
+
+zenity --info --title="Audio Configuration" --text="This will help you configure your audio device.\n\nClick OK to continue." --width=400
+
+# Detect audio devices
+mapfile -t DEVICES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card \([0-9]\+\):.*device \([0-9]\+\):.*/\1,\2/')
+mapfile -t DEVICE_NAMES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card [0-9]\+: \(.*\), device [0-9]\+: \(.*\)/\1 - \2/')
+
+if [ ${#DEVICES[@]} -eq 0 ]; then
+    zenity --error --title="No Devices Found" --text="No audio devices detected!" --width=300
+    exit 1
+fi
+
+# Build device list for zenity
+DEVICE_LIST=""
+for i in "${!DEVICES[@]}"; do
+    IFS=',' read -r CARD DEV <<< "${DEVICES[$i]}"
+    DEVICE_LIST="${DEVICE_LIST}FALSE hw:${CARD},${DEV} ${DEVICE_NAMES[$i]} "
+done
+
+# Select device
+SELECTED=$(zenity --list --radiolist --title="Select Audio Device" \
+    --text="Choose your audio output device:" \
+    --column="Select" --column="Device" --column="Name" \
+    ${DEVICE_LIST} --width=600 --height=400)
+
+if [ -z "$SELECTED" ]; then
+    zenity --info --title="Cancelled" --text="Audio configuration cancelled." --width=300
+    exit 0
+fi
+
+# Extract card and device numbers
+SELECTED_CARD=$(echo "$SELECTED" | sed 's/hw:\([0-9]\+\),.*/\1/')
+SELECTED_DEV=$(echo "$SELECTED" | sed 's/hw:[0-9]\+,\([0-9]\+\)/\1/')
+
+# Test audio
+zenity --info --title="Testing Audio" --text="Playing test sound on $SELECTED\n\nClick OK to play." --width=400
+aplay -D plughw:${SELECTED_CARD},${SELECTED_DEV} /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null
+
+if zenity --question --title="Audio Test" --text="Did you hear the test sound?" --width=300; then
+    # Configure PulseAudio
+    mkdir -p ~/.config/pulse
+    cat > ~/.config/pulse/default.pa <<EOF
+#!/usr/bin/pulseaudio -nF
+
+# Include the default PulseAudio config
+.include /etc/pulse/default.pa
+
+# Explicitly load ALSA sink with selected device
+load-module module-alsa-sink device=hw:${SELECTED_CARD},${SELECTED_DEV} sink_name=selected_output
+set-default-sink selected_output
+
+# Don't auto-suspend when idle
+unload-module module-suspend-on-idle
+EOF
+    
+    # Configure ALSA default
+    sudo bash -c "cat > /etc/asound.conf <<EOF
+defaults.pcm.card ${SELECTED_CARD}
+defaults.pcm.device ${SELECTED_DEV}
+defaults.ctl.card ${SELECTED_CARD}
+EOF"
+    
+    # Restart PulseAudio
+    pulseaudio -k 2>/dev/null
+    sleep 1
+    
+    zenity --info --title="Success" --text="Audio configured successfully for $SELECTED\n\nYou may need to restart applications for changes to take effect." --width=400
+else
+    if zenity --question --title="Try Again?" --text="Audio test failed. Try another device?" --width=300; then
+        exec "$0"
+    fi
+fi
+AUDIOCONF
+chmod +x /usr/local/bin/configure-audio.sh
+
+# Create desktop shortcut
+cat > /home/kodi/Desktop/Configure-Audio.desktop <<'DESKCONF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Configure Audio
+Comment=Configure audio output device
+Exec=/usr/local/bin/configure-audio.sh
+Icon=audio-card
+Terminal=false
+Categories=Settings;HardwareSettings;
+DESKCONF
+chmod +x /home/kodi/Desktop/Configure-Audio.desktop
+chown kodi:kodi /home/kodi/Desktop/Configure-Audio.desktop
+
+msg_ok "Created audio configuration shortcut"
 
 # Set up XFCE session environment
 cat > /home/kodi/.xprofile <<'XPEOF'
