@@ -702,6 +702,26 @@ apt-get install -y kodi &>/dev/null
 if command -v kodi &> /dev/null; then
     echo "Kodi PPA installation complete!"
     echo "You can launch Kodi from the applications menu."
+    echo ""
+    
+    # Prompt for autostart
+    read -p "Do you want Kodi to auto-start on boot? (y/n): " -n 1 -r AUTOSTART
+    echo ""
+    
+    if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
+        mkdir -p /home/kodi/.config/autostart
+        cat <<AUTOEOF >/home/kodi/.config/autostart/kodi.desktop
+[Desktop Entry]
+Type=Application
+Name=Kodi
+Exec=kodi
+X-XFCE-Autostart-enabled=true
+AUTOEOF
+        chown -R kodi:kodi /home/kodi/.config/autostart
+        echo "Kodi will now auto-start on boot."
+    else
+        echo "Kodi will NOT auto-start (launch manually from menu)."
+    fi
 else
     echo "Kodi installation failed!"
 fi
@@ -747,6 +767,26 @@ flatpak install -y flathub tv.kodi.Kodi &>/dev/null
 if flatpak list | grep -q "tv.kodi.Kodi"; then
     echo "Kodi Flatpak installation complete!"
     echo "You can launch Kodi from the applications menu."
+    echo ""
+    
+    # Prompt for autostart
+    read -p "Do you want Kodi to auto-start on boot? (y/n): " -n 1 -r AUTOSTART
+    echo ""
+    
+    if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
+        mkdir -p /home/kodi/.config/autostart
+        cat <<AUTOEOF >/home/kodi/.config/autostart/kodi.desktop
+[Desktop Entry]
+Type=Application
+Name=Kodi
+Exec=flatpak run tv.kodi.Kodi
+X-XFCE-Autostart-enabled=true
+AUTOEOF
+        chown -R kodi:kodi /home/kodi/.config/autostart
+        echo "Kodi will now auto-start on boot."
+    else
+        echo "Kodi will NOT auto-start (launch manually from menu)."
+    fi
 else
     echo "Kodi Flatpak installation failed!"
 fi
