@@ -183,7 +183,7 @@ cat >/usr/local/bin/preX-populate-input.sh << '__EOF__'
 
 cat >/etc/X11/xorg.conf.d/10-lxc-input.conf << '_EOF_'
 Section "ServerFlags"
-     Option "AutoAddDevices" "False"
+     Option "AutoAddDevices" "True"
 EndSection
 _EOF_
 
