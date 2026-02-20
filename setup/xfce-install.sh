@@ -249,6 +249,27 @@ msg_info "Setting up PulseAudio"
 apt-get install -y pulseaudio pulseaudio-utils pavucontrol alsa-utils &>/dev/null
 msg_ok "Installed PulseAudio packages"
 
+msg_info "Creating ALSA mixer desktop shortcut for volume control"
+mkdir -p /home/kodi/Desktop
+
+cat > /home/kodi/Desktop/Volume-Control.desktop <<'VOLEOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Volume Control
+Comment=ALSA Mixer Volume Control
+Exec=xfce4-terminal --title="Volume Control" -e "alsamixer"
+Icon=multimedia-volume-control
+Terminal=false
+Categories=AudioVideo;Audio;
+VOLEOF
+
+chmod +x /home/kodi/Desktop/Volume-Control.desktop
+chown kodi:kodi /home/kodi/Desktop/Volume-Control.desktop
+sudo -u kodi gio set /home/kodi/Desktop/Volume-Control.desktop metadata::trusted true 2>/dev/null || true
+
+msg_ok "Created ALSA mixer volume control shortcut"
+
 # Check if user wants to configure audio now (from environment variable or prompt)
 if [ -z "$CONFIGURE_AUDIO" ]; then
     # Fallback prompt if variable not set (standalone script execution)
@@ -557,54 +578,6 @@ chown -R kodi:kodi /home/kodi/.config /home/kodi/.xprofile
 sudo -u kodi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable pulseaudio.socket pulseaudio.service &>/dev/null
 
 msg_ok "Set up PulseAudio"
-
-msg_info "Setting up Kodi exit monitor for XFCE panel"
-cat > /usr/local/bin/kodi-exit-monitor.sh <<'MONEOF'
-#!/bin/bash
-# Monitor for Kodi process and restart panel when it exits
-
-while true; do
-    # Wait for Kodi to be running (check both native and flatpak)
-    while ! pgrep -x "kodi.bin" > /dev/null 2>&1 && ! pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
-        sleep 2
-    done
-    
-    # Kodi is running, wait for it to exit
-    while pgrep -x "kodi.bin" > /dev/null 2>&1 || pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
-        sleep 2
-    done
-    
-    # Kodi just exited, restart the panel with correct environment
-    sleep 1
-    su - kodi -c "DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 killall xfce4-panel; DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 xfce4-panel &"
-    
-    # Wait a bit before monitoring again
-    sleep 5
-done
-MONEOF
-chmod +x /usr/local/bin/kodi-exit-monitor.sh
-
-# Create systemd service for the monitor
-cat > /etc/systemd/system/kodi-exit-monitor.service <<'SERVEOF'
-[Unit]
-Description=Monitor Kodi exit and restart XFCE panel
-After=multi-user.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/kodi-exit-monitor.sh
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-SERVEOF
-
-systemctl daemon-reload
-systemctl enable kodi-exit-monitor.service &>/dev/null
-systemctl start kodi-exit-monitor.service
-
-msg_ok "Set up Kodi exit monitor"
 
 # Install selected applications
 echo -e "\n${GN}=== Installing Selected Applications ===${CL}\n"
