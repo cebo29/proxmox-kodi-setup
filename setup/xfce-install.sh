@@ -225,15 +225,22 @@ msg_info "Setting up PulseAudio"
 apt-get install -y pulseaudio pulseaudio-utils pavucontrol alsa-utils &>/dev/null
 msg_ok "Installed PulseAudio packages"
 
-# Ask if user wants to configure audio now
-echo -e "\n${GN}=== Audio Device Configuration ===${CL}"
-echo -e "${YW}Would you like to configure audio device now?${CL}"
-echo -e "You can skip this and configure it later from the desktop shortcut."
-echo ""
-read -p "Configure audio now? (y/n): " -n 1 -r CONFIGURE_AUDIO_NOW
-echo ""
+# Check if user wants to configure audio now (from environment variable or prompt)
+if [ -z "$CONFIGURE_AUDIO" ]; then
+    # Fallback prompt if variable not set (standalone script execution)
+    echo -e "\n${GN}=== Audio Device Configuration ===${CL}"
+    echo -e "${YW}Would you like to configure audio device now?${CL}"
+    echo -e "You can skip this and configure it later from the desktop shortcut."
+    echo ""
+    read -p "Configure audio now? (y/n): " -n 1 -r CONFIGURE_AUDIO_NOW
+    echo ""
+    CONFIGURE_AUDIO_NOW=$(echo "$CONFIGURE_AUDIO_NOW" | tr '[:upper:]' '[:lower:]')
+else
+    # Use the environment variable from kodi-v1.sh
+    CONFIGURE_AUDIO_NOW="$CONFIGURE_AUDIO"
+fi
 
-if [[ $CONFIGURE_AUDIO_NOW =~ ^[Yy]$ ]]; then
+if [[ $CONFIGURE_AUDIO_NOW =~ ^y ]]; then
     # Detect audio devices
     echo -e "\n${GN}=== Audio Device Detection ===${CL}"
     echo -e "Detecting available audio playback devices...\n"
@@ -403,6 +410,10 @@ fi
 
 # Create audio configuration script for desktop shortcut
 msg_info "Creating audio configuration desktop shortcut"
+
+# Create Desktop folder if it doesn't exist
+mkdir -p /home/kodi/Desktop
+
 cat > /usr/local/bin/configure-audio.sh <<'AUDIOCONF'
 #!/bin/bash
 
