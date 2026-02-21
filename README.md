@@ -39,6 +39,8 @@ You will be prompted to set a password for the user "kodi" and asked if you want
 
 First Shutdown maybe slow, but its only a one time thing.
 
+Shutdown of the lxc is available in kodi, so that you can access proxmox host shell.
+
 ## Bluetooth Setup
 If you want to add bluetooth device in Proxmox host, run the following script in proxmox shell:
 ```
