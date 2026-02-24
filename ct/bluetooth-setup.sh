@@ -25,232 +25,268 @@ function msg_error() {
     echo -e "${BFR} ${CROSS} ${RD}${msg}${CL}"
 }
 
-# Check if running as root
-if [ "$EUID" -ne 0 ]; then
-    echo -e "${RD}Please run as root (use sudo)${CL}"
-    exit 1
+# Print header
+echo "╔═══════════════════════════════════════════════╗"
+echo "║   Bluetooth Device Pairing Setup Script      ║"
+echo "╚═══════════════════════════════════════════════╝"
+
+# Check if bluetooth service is running
+if ! systemctl is-active --quiet bluetooth; then
+    msg_info "Starting Bluetooth service"
+    systemctl start bluetooth
+    sleep 2
+    msg_ok "Bluetooth service started"
+else
+    msg_ok "Bluetooth service started"
 fi
 
-echo -e "${GN}╔═══════════════════════════════════════════════╗${CL}"
-echo -e "${GN}║   Bluetooth Device Pairing Setup Script      ║${CL}"
-echo -e "${GN}╚═══════════════════════════════════════════════╝${CL}"
-echo ""
-
-# Check if bluetooth is installed
-if ! command -v bluetoothctl &> /dev/null; then
-    msg_info "Installing Bluetooth packages"
-    apt-get update &>/dev/null
-    apt-get install -y bluez bluetooth &>/dev/null
-    msg_ok "Installed Bluetooth packages"
-fi
-
-# Start bluetooth service
-msg_info "Starting Bluetooth service"
-systemctl start bluetooth
-systemctl enable bluetooth &>/dev/null
-msg_ok "Bluetooth service started"
-
-# Check if bluetooth is available
-if ! hciconfig hci0 &>/dev/null; then
+# Check if bluetooth adapter exists
+if ! hciconfig hci0 > /dev/null 2>&1; then
     msg_error "No Bluetooth adapter found!"
-    echo -e "${YW}Please ensure:"
-    echo -e "  1. Bluetooth hardware is present"
-    echo -e "  2. Bluetooth module is loaded"
-    echo -e "  3. Adapter is not blocked (check with 'rfkill list')${CL}"
+    echo "Please ensure:"
+    echo "  1. Bluetooth hardware is present"
+    echo "  2. Bluetooth drivers are loaded"
+    echo "  3. Device is not blocked (check 'rfkill list')"
     exit 1
 fi
 
 msg_ok "Bluetooth adapter detected"
 
-echo -e "\n${GN}=== Bluetooth Setup ===${CL}"
-echo -e "This script will help you pair Bluetooth devices."
-echo -e "Supported device types:"
-echo -e "  • Keyboards"
-echo -e "  • Mice"
-echo -e "  • Game controllers/gamepads"
-echo -e "  • Headphones/speakers"
-echo -e "  • Other HID devices"
+# Information for user
+echo ""
+echo "${GN}=== Bluetooth Setup ===${CL}"
+echo "This script will help you pair Bluetooth devices."
+echo ""
+echo "Supported device types:"
+echo "  • Keyboards"
+echo "  • Mice"
+echo "  • Game controllers/gamepads"
+echo "  • Headphones/speakers"
+echo "  • Other HID devices"
 echo ""
 
-# Power on the adapter
-msg_info "Powering on Bluetooth adapter"
-echo "power on" | bluetoothctl &>/dev/null
-sleep 2
+# Power on adapter
+msg_info "Powering on adapter"
+echo "power on" | bluetoothctl > /dev/null 2>&1
+sleep 1
 msg_ok "Adapter powered on"
 
 # Enable agent
-msg_info "Enabling pairing agent"
-echo "agent on" | bluetoothctl &>/dev/null
-echo "default-agent" | bluetoothctl &>/dev/null
+msg_info "Enabling agent"
+echo "agent on" | bluetoothctl > /dev/null 2>&1
+echo "default-agent" | bluetoothctl > /dev/null 2>&1
 msg_ok "Agent enabled"
 
-echo -e "\n${YW}Instructions:${CL}"
-echo -e "  1. Put your Bluetooth device in ${GN}pairing mode${CL}"
-echo -e "  2. Wait for it to appear in the scan results"
-echo -e "  3. Note the device's MAC address"
-echo -e ""
-echo -e "${YW}Common pairing mode methods:${CL}"
-echo -e "  • Hold power button for 5-10 seconds"
-echo -e "  • Press dedicated pairing button"
-echo -e "  • Hold specific button combination"
-echo -e ""
-
-read -p "Press Enter when your device is in pairing mode..." dummy
-
-msg_info "Scanning for devices (15 seconds)"
+# Pairing instructions
 echo ""
-echo -e "${GN}╔════════════════════════════════════════════════════════════╗${CL}"
-echo -e "${GN}║                  Scanning for devices...                  ║${CL}"
-echo -e "${GN}╚════════════════════════════════════════════════════════════╝${CL}"
+echo "${YW}Instructions:${CL}"
+echo "  1. Put your Bluetooth device in pairing mode"
+echo "  2. Wait for it to appear in the scan results"
+echo "  3. Select the device by entering its number"
+echo ""
+echo "Common pairing mode methods:"
+echo "  • Hold power button for 5-10 seconds"
+echo "  • Press dedicated pairing button"
+echo "  • Hold specific button combination"
+echo ""
+read -p "Press Enter when your device is in pairing mode..."
 
-# Start scanning and capture output
-{
+# Scan for devices
+SCAN_TIME=15
+msg_info "Scanning for devices ($SCAN_TIME seconds)"
+
+# Start scan and capture output
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║                  Scanning for devices...                  ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+
+# Start bluetoothctl scan in background
+rm -f /tmp/bt_scan.log
+(
     echo "scan on"
-    sleep 15
+    sleep $SCAN_TIME
     echo "scan off"
-} | bluetoothctl > /tmp/bt_scan.log 2>&1 &
+) | bluetoothctl > /tmp/bt_scan.log 2>&1 &
+
+SCAN_PID=$!
 
 # Show progress
-for i in {1..15}; do
-    echo -ne "\r${YW}Scanning... ${i}/15 seconds${CL}"
+for i in $(seq 1 $SCAN_TIME); do
+    echo -ne "\rScanning... $i/$SCAN_TIME seconds"
     sleep 1
 done
 echo ""
 
-wait
+# Wait for scan to complete
+wait $SCAN_PID
+
+msg_ok "Scan complete"
 
 # Parse discovered devices
-echo -e "\n${GN}Discovered devices:${CL}\n"
-grep "Device" /tmp/bt_scan.log | grep -v "not available" | awk '{print $2, $3, $4, $5, $6, $7, $8, $9}' | sort -u | nl -w2 -s". "
+echo ""
+echo "Discovered devices:"
+echo ""
 
-DEVICE_COUNT=$(grep "Device" /tmp/bt_scan.log | grep -v "not available" | awk '{print $2}' | sort -u | wc -l)
+DEVICE_LIST=()
+DEVICE_COUNT=0
 
-if [ "$DEVICE_COUNT" -eq 0 ]; then
+while IFS= read -r line; do
+    # Match lines like: "[NEW] Device E4:17:D8:16:B3:33 8BitDo Micro gamepad"
+    if [[ $line =~ \[NEW\]\ Device\ ([0-9A-Fa-f:]+)\ (.+)$ ]]; then
+        MAC="${BASH_REMATCH[1]}"
+        NAME="${BASH_REMATCH[2]}"
+        ((DEVICE_COUNT++))
+        DEVICE_LIST+=("$MAC|$NAME")
+        echo "  ${GN}$DEVICE_COUNT)${CL} $NAME"
+        echo "     ${BL}MAC: $MAC${CL}"
+        echo ""
+    fi
+done < <(grep "\[NEW\] Device" /tmp/bt_scan.log)
+
+if [ $DEVICE_COUNT -eq 0 ]; then
     msg_error "No devices found"
-    echo -e "${YW}Troubleshooting tips:${CL}"
-    echo -e "  • Ensure device is in pairing mode"
-    echo -e "  • Check device battery"
-    echo -e "  • Move device closer to computer"
-    echo -e "  • Try restarting Bluetooth: ${BL}systemctl restart bluetooth${CL}"
-    rm /tmp/bt_scan.log
+    echo ""
+    echo "Troubleshooting:"
+    echo "  • Make sure the device is in pairing mode"
+    echo "  • Try moving the device closer"
+    echo "  • Check if the device is already paired (unpair first)"
+    echo "  • Some devices need to be unpaired from other hosts first"
     exit 1
 fi
 
-echo ""
-echo -e "${YW}Enter the number of the device you want to pair (or MAC address):${CL}"
+# Get user selection
+echo "Enter device number (1-$DEVICE_COUNT) or MAC address:"
 read -p "Selection: " SELECTION
 
-# Check if input is a number (device from list) or MAC address
-if [[ "$SELECTION" =~ ^[0-9]+$ ]]; then
-    # It's a number - get MAC from list
-    MAC_ADDRESS=$(grep "Device" /tmp/bt_scan.log | grep -v "not available" | awk '{print $2}' | sort -u | sed -n "${SELECTION}p")
-else
-    # Assume it's a MAC address
-    MAC_ADDRESS="$SELECTION"
-fi
+# Validate and get device info
+DEVICE_MAC=""
+DEVICE_NAME=""
 
-if [ -z "$MAC_ADDRESS" ]; then
+if [[ $SELECTION =~ ^[0-9]+$ ]] && [ $SELECTION -ge 1 ] && [ $SELECTION -le $DEVICE_COUNT ]; then
+    # Valid number - get device from array (subtract 1 for 0-based index)
+    DEVICE_INFO="${DEVICE_LIST[$((SELECTION-1))]}"
+    DEVICE_MAC="${DEVICE_INFO%%|*}"
+    DEVICE_NAME="${DEVICE_INFO#*|}"
+elif [[ $SELECTION =~ ^[0-9A-Fa-f:]+$ ]]; then
+    # Looks like a MAC address
+    DEVICE_MAC="$SELECTION"
+    # Try to find name in list
+    for item in "${DEVICE_LIST[@]}"; do
+        if [[ $item == $DEVICE_MAC\|* ]]; then
+            DEVICE_NAME="${item#*|}"
+            break
+        fi
+    done
+    if [ -z "$DEVICE_NAME" ]; then
+        DEVICE_NAME="Unknown Device"
+    fi
+else
     msg_error "Invalid selection"
-    rm /tmp/bt_scan.log
     exit 1
 fi
 
-# Get device name for confirmation
-DEVICE_NAME=$(grep "$MAC_ADDRESS" /tmp/bt_scan.log | awk '{$1=$2=""; print $0}' | sed 's/^[ \t]*//' | head -1)
-
+# Confirm selection
 echo ""
-echo -e "${GN}Selected device:${CL}"
-echo -e "  MAC: ${BL}$MAC_ADDRESS${CL}"
-echo -e "  Name: ${BL}$DEVICE_NAME${CL}"
+echo "Selected device:"
+echo "  Name: $DEVICE_NAME"
+echo "  MAC: $DEVICE_MAC"
 echo ""
-
-read -p "Proceed with pairing? (y/n): " -n 1 -r CONFIRM
+read -p "Proceed with pairing? (y/n): " -n 1 -r
 echo ""
 
-if [[ ! $CONFIRM =~ ^[Yy]$ ]]; then
-    echo -e "${YW}Pairing cancelled${CL}"
-    rm /tmp/bt_scan.log
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Pairing cancelled."
     exit 0
 fi
 
+# Remove device if already paired
+msg_info "Removing existing pairing (if any)"
+echo "remove $DEVICE_MAC" | bluetoothctl > /dev/null 2>&1
+sleep 1
+msg_ok "Ready to pair"
+
 # Pair the device
 msg_info "Pairing with device"
-echo "pair $MAC_ADDRESS" | bluetoothctl &>/tmp/bt_pair.log
+echo ""
+echo "${YW}Note: Some devices may require you to:${CL}"
+echo "  • Confirm pairing on the device"
+echo "  • Enter a PIN code"
+echo "  • Press a specific button"
+echo ""
 
-# Check for PIN/passkey request
-if grep -qi "PIN\|passkey\|confirm" /tmp/bt_pair.log; then
-    echo -e "\n${YW}Device requires PIN/passkey${CL}"
-    grep -i "PIN\|passkey\|confirm" /tmp/bt_pair.log | tail -1
-    read -p "Enter PIN (if needed, or press Enter to skip): " PIN
-    if [ -n "$PIN" ]; then
-        echo "$PIN" | bluetoothctl &>/dev/null
+# Create expect-like script for pairing
+PAIR_OUTPUT=$(cat <<EOF | bluetoothctl 2>&1
+pair $DEVICE_MAC
+quit
+EOF
+)
+
+if echo "$PAIR_OUTPUT" | grep -q "Pairing successful\|AlreadyExists"; then
+    msg_ok "Paired successfully"
+    
+    # Trust the device
+    msg_info "Trusting device"
+    echo "trust $DEVICE_MAC" | bluetoothctl > /dev/null 2>&1
+    sleep 1
+    msg_ok "Device trusted"
+    
+    # Connect to the device
+    msg_info "Connecting to device"
+    CONNECT_OUTPUT=$(echo "connect $DEVICE_MAC" | bluetoothctl 2>&1)
+    
+    if echo "$CONNECT_OUTPUT" | grep -q "Connection successful\|AlreadyConnected"; then
+        msg_ok "Connected successfully"
+        echo ""
+        echo "${GN}╔════════════════════════════════════════════════╗${CL}"
+        echo "${GN}║          Pairing Complete!                     ║${CL}"
+        echo "${GN}╚════════════════════════════════════════════════╝${CL}"
+        echo ""
+        echo "Device: $DEVICE_NAME"
+        echo "MAC: $DEVICE_MAC"
+        echo "Status: ${GN}Paired, Trusted, and Connected${CL}"
+        echo ""
+        echo "Your device should now be ready to use!"
+        echo "It will automatically connect when powered on."
+    else
+        msg_error "Connection failed"
+        echo ""
+        echo "${YW}Device is paired but not connected.${CL}"
+        echo "You may need to:"
+        echo "  • Power cycle the device"
+        echo "  • Manually connect from Bluetooth settings"
+        echo "  • Check if the device is in range"
+        echo ""
+        echo "Debug info:"
+        echo "$CONNECT_OUTPUT"
     fi
-fi
-
-sleep 3
-
-if grep -qi "pairing successful\|paired: yes" /tmp/bt_pair.log; then
-    msg_ok "Device paired successfully"
 else
     msg_error "Pairing failed"
-    echo -e "${YW}Debug info:${CL}"
-    tail -5 /tmp/bt_pair.log
-    rm /tmp/bt_scan.log /tmp/bt_pair.log
+    echo ""
+    echo "Common reasons for pairing failure:"
+    echo "  • Device not in pairing mode"
+    echo "  • Device too far away (weak signal)"
+    echo "  • Device already paired with another host"
+    echo "  • PIN/passkey required but not entered"
+    echo "  • Device battery too low"
+    echo ""
+    echo "Debug info:"
+    echo "$PAIR_OUTPUT"
+    echo ""
+    echo "Try again with these steps:"
+    echo "  1. Reset the device (check manual)"
+    echo "  2. Unpair from other devices first"
+    echo "  3. Ensure device is in pairing mode"
+    echo "  4. Run this script again"
     exit 1
 fi
 
-# Trust the device
-msg_info "Trusting device for auto-reconnect"
-echo "trust $MAC_ADDRESS" | bluetoothctl &>/dev/null
-sleep 1
-msg_ok "Device trusted"
-
-# Connect the device
-msg_info "Connecting to device"
-echo "connect $MAC_ADDRESS" | bluetoothctl &>/tmp/bt_connect.log
-sleep 3
-
-if grep -qi "connection successful\|connected: yes" /tmp/bt_connect.log; then
-    msg_ok "Device connected"
-else
-    echo -e "${YW}Connection pending - device may connect automatically${CL}"
-fi
-
-# Show final status
+# Show paired devices
 echo ""
-echo -e "${GN}═══════════════════════════════════════════════${CL}"
-echo -e "${GN}             Pairing Complete!                 ${CL}"
-echo -e "${GN}═══════════════════════════════════════════════${CL}"
-echo ""
-echo -e "${GN}Device Information:${CL}"
-echo "info $MAC_ADDRESS" | bluetoothctl | grep -E "Name:|Paired:|Trusted:|Connected:"
+echo "${GN}All paired devices:${CL}"
+bluetoothctl devices Paired
+
+# Cleanup
+rm -f /tmp/bt_scan.log
 
 echo ""
-echo -e "${GN}Next steps:${CL}"
-echo -e "  • Device should reconnect automatically on next boot"
-echo -e "  • If using in LXC, device should be accessible inside container"
-echo -e "  • For gamepad/controller, test in Kodi or your preferred app"
-echo ""
-
-read -p "Would you like to pair another device? (y/n): " -n 1 -r ANOTHER
-echo ""
-
-if [[ $ANOTHER =~ ^[Yy]$ ]]; then
-    # Clean up and restart
-    rm /tmp/bt_scan.log /tmp/bt_pair.log /tmp/bt_connect.log
-    exec "$0" "$@"
-fi
-
-# Clean up
-rm -f /tmp/bt_scan.log /tmp/bt_pair.log /tmp/bt_connect.log
-
-echo -e "\n${GN}Bluetooth setup complete!${CL}"
-echo -e "You can manage devices later with: ${BL}bluetoothctl${CL}"
-echo ""
-echo -e "${YW}Common bluetoothctl commands:${CL}"
-echo -e "  • ${BL}devices${CL} - List paired devices"
-echo -e "  • ${BL}info <MAC>${CL} - Show device info"
-echo -e "  • ${BL}connect <MAC>${CL} - Connect to device"
-echo -e "  • ${BL}disconnect <MAC>${CL} - Disconnect device"
-echo -e "  • ${BL}remove <MAC>${CL} - Unpair device"
-echo ""
+echo "Done! You can now use your Bluetooth device."
