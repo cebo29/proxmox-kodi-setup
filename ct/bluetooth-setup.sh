@@ -27,7 +27,7 @@ function msg_error() {
 
 # Print header
 echo "╔═══════════════════════════════════════════════╗"
-echo "║   Bluetooth Device Pairing Setup Script      ║"
+echo "║   Bluetooth Device Pairing Setup Script       ║"
 echo "╚═══════════════════════════════════════════════╝"
 
 # Check if bluetooth service is running
