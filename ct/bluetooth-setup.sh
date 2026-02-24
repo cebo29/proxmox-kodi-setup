@@ -122,6 +122,15 @@ wait $SCAN_PID
 
 msg_ok "Scan complete"
 
+# Debug: Show raw scan output
+echo ""
+echo "${YW}Debug: Raw scan output:${CL}"
+cat /tmp/bt_scan.log
+echo ""
+echo "${YW}Debug: Filtering for devices:${CL}"
+grep "Device" /tmp/bt_scan.log || echo "No devices found in log"
+echo ""
+
 # Parse discovered devices
 echo ""
 echo "Discovered devices:"
@@ -132,16 +141,18 @@ DEVICE_COUNT=0
 
 while IFS= read -r line; do
     # Match lines like: "[NEW] Device E4:17:D8:16:B3:33 8BitDo Micro gamepad"
-    if [[ $line =~ \[NEW\]\ Device\ ([0-9A-Fa-f:]+)\ (.+)$ ]]; then
+    if [[ $line =~ Device\ ([0-9A-Fa-f:]+)\ (.+)$ ]]; then
         MAC="${BASH_REMATCH[1]}"
         NAME="${BASH_REMATCH[2]}"
+        # Clean up the name (remove trailing spaces)
+        NAME=$(echo "$NAME" | sed 's/[[:space:]]*$//')
         ((DEVICE_COUNT++))
         DEVICE_LIST+=("$MAC|$NAME")
         echo "  ${GN}$DEVICE_COUNT)${CL} $NAME"
         echo "     ${BL}MAC: $MAC${CL}"
         echo ""
     fi
-done < <(grep "\[NEW\] Device" /tmp/bt_scan.log)
+done < <(grep "Device" /tmp/bt_scan.log)
 
 if [ $DEVICE_COUNT -eq 0 ]; then
     msg_error "No devices found"
