@@ -258,6 +258,17 @@ KODIMONEOF
     cat > /usr/local/bin/kodi-exit-monitor.sh <<'KODIMONSCRIPT'
 #!/bin/bash
 
+# Get kodi user's UID for proper session access
+KODI_UID=$(id -u kodi)
+export XDG_RUNTIME_DIR="/run/user/${KODI_UID}"
+export DISPLAY=:0
+export XAUTHORITY=/home/kodi/.Xauthority
+
+# Wait for X server to be ready
+while [ ! -e "$XAUTHORITY" ]; do
+    sleep 1
+done
+
 # Wait for Kodi to start
 while ! pgrep -x "kodi.bin" > /dev/null; do
     sleep 2
@@ -269,9 +280,24 @@ while pgrep -x "kodi.bin" > /dev/null; do
 done
 
 # Restart the XFCE panel after Kodi exits
+# Kill existing panel
 killall xfce4-panel 2>/dev/null
-sleep 1
-DISPLAY=:0 xfce4-panel &
+sleep 2
+
+# Start panel as kodi user with proper environment
+su - kodi -c "DISPLAY=:0 XAUTHORITY=/home/kodi/.Xauthority xfce4-panel" &
+
+# Give it time to start
+sleep 2
+
+# Verify it started
+if pgrep -x "xfce4-panel" > /dev/null; then
+    logger "kodi-exit-monitor: Panel restarted successfully"
+else
+    logger "kodi-exit-monitor: Panel restart FAILED"
+    # Try one more time with explicit display
+    su - kodi -c "DISPLAY=:0 xfce4-panel" &
+fi
 KODIMONSCRIPT
 
     chmod +x /usr/local/bin/kodi-exit-monitor.sh
