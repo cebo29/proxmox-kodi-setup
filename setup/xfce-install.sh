@@ -163,6 +163,7 @@ if ! command -v lightdm &> /dev/null; then
     apt-get install -y lightdm lightdm-gtk-greeter &>/dev/null
 fi
 
+mkdir -p /etc/lightdm/lightdm.conf.d
 cat <<EOF >/etc/lightdm/lightdm.conf.d/autologin-kodi.conf
 [Seat:*]
 autologin-user=kodi
@@ -231,6 +232,57 @@ else
     msg_info "Kodi not installed, skipping autostart setup"
 fi
 
+# Set up Kodi exit monitor service to restart panel after Kodi exits
+if [ -n "$KODI_EXEC" ] && [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
+    msg_info "Setting up Kodi exit monitor service"
+    
+    cat > /etc/systemd/system/kodi-exit-monitor.service <<'KODIMONEOF'
+[Unit]
+Description=Monitor Kodi Process and Restart XFCE Panel
+After=lightdm.service
+Requires=lightdm.service
+
+[Service]
+Type=simple
+User=kodi
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/kodi/.Xauthority"
+Restart=always
+RestartSec=5
+ExecStart=/usr/local/bin/kodi-exit-monitor.sh
+
+[Install]
+WantedBy=multi-user.target
+KODIMONEOF
+
+    cat > /usr/local/bin/kodi-exit-monitor.sh <<'KODIMONSCRIPT'
+#!/bin/bash
+
+# Wait for Kodi to start
+while ! pgrep -x "kodi.bin" > /dev/null; do
+    sleep 2
+done
+
+# Wait for Kodi to exit
+while pgrep -x "kodi.bin" > /dev/null; do
+    sleep 2
+done
+
+# Restart the XFCE panel after Kodi exits
+killall xfce4-panel 2>/dev/null
+sleep 1
+DISPLAY=:0 xfce4-panel &
+KODIMONSCRIPT
+
+    chmod +x /usr/local/bin/kodi-exit-monitor.sh
+    systemctl daemon-reload
+    systemctl enable kodi-exit-monitor.service
+    
+    msg_ok "Set up Kodi exit monitor service"
+    echo -e "${YW}  Note: Panel restart may affect shutdown button permissions from XFCE menu${CL}"
+    echo -e "${YW}  Use desktop Shutdown/Reboot shortcuts instead${CL}"
+fi
+
 msg_info "Setting up PolicyKit permissions"
 mkdir -p /etc/polkit-1/localauthority/50-local.d
 
@@ -249,9 +301,10 @@ msg_info "Setting up PulseAudio"
 apt-get install -y pulseaudio pulseaudio-utils pavucontrol alsa-utils &>/dev/null
 msg_ok "Installed PulseAudio packages"
 
-msg_info "Creating ALSA mixer desktop shortcut for volume control"
+msg_info "Creating desktop shortcuts"
 mkdir -p /home/kodi/Desktop
 
+# Volume Control shortcut
 cat > /home/kodi/Desktop/Volume-Control.desktop <<'VOLEOF'
 [Desktop Entry]
 Version=1.0
@@ -263,12 +316,43 @@ Icon=multimedia-volume-control
 Terminal=false
 Categories=AudioVideo;Audio;
 VOLEOF
-
 chmod +x /home/kodi/Desktop/Volume-Control.desktop
 chown kodi:kodi /home/kodi/Desktop/Volume-Control.desktop
 sudo -u kodi gio set /home/kodi/Desktop/Volume-Control.desktop metadata::trusted true 2>/dev/null || true
 
-msg_ok "Created ALSA mixer volume control shortcut"
+# Shutdown shortcut
+cat > /home/kodi/Desktop/Shutdown.desktop <<'SHUTEOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Shutdown
+Comment=Shutdown the system
+Exec=systemctl poweroff
+Icon=system-shutdown
+Terminal=false
+Categories=System;
+SHUTEOF
+chmod +x /home/kodi/Desktop/Shutdown.desktop
+chown kodi:kodi /home/kodi/Desktop/Shutdown.desktop
+sudo -u kodi gio set /home/kodi/Desktop/Shutdown.desktop metadata::trusted true 2>/dev/null || true
+
+# Reboot shortcut
+cat > /home/kodi/Desktop/Reboot.desktop <<'REBOOTEOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Reboot
+Comment=Reboot the system
+Exec=systemctl reboot
+Icon=system-reboot
+Terminal=false
+Categories=System;
+REBOOTEOF
+chmod +x /home/kodi/Desktop/Reboot.desktop
+chown kodi:kodi /home/kodi/Desktop/Reboot.desktop
+sudo -u kodi gio set /home/kodi/Desktop/Reboot.desktop metadata::trusted true 2>/dev/null || true
+
+msg_ok "Created desktop shortcuts (Volume, Shutdown, Reboot)"
 
 # Check if user wants to configure audio now (from environment variable or prompt)
 if [ -z "$CONFIGURE_AUDIO" ]; then
@@ -572,7 +656,7 @@ export DISPLAY=:0
 export XDG_RUNTIME_DIR=/run/user/1000
 XPEOF
 
-chown -R kodi:kodi /home/kodi/.config /home/kodi/.xprofile
+chown -R kodi:kodi /home/kodi/.config /home/kodi/.xprofile /home/kodi/Desktop
 
 # Enable PulseAudio socket activation for kodi user
 sudo -u kodi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable pulseaudio.socket pulseaudio.service &>/dev/null
@@ -677,21 +761,36 @@ EOF
     fi
 fi
 
+
 # Create desktop launchers for skipped applications
 mkdir -p /home/kodi/Desktop
 
 # Kodi installers (PPA and Flatpak) if Kodi wasn't installed
-if [ -z "$KODI_EXEC" ]; then
-    # Kodi PPA installer
-    cat <<'KODIPPAEOF' >/usr/local/bin/install-kodi-ppa.sh
+# Always create Kodi installer scripts (allows version switching)
+# Kodi PPA installer
+cat <<'KODIPPAEOF' >/usr/local/bin/install-kodi-ppa.sh
 #!/usr/bin/env bash
-echo "Installing Kodi from PPA (v20.x)..."
+echo "Installing/Switching to Kodi PPA (v20.x)..."
+echo ""
 
 # Check and remove Flatpak version if installed
 if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
     echo "Removing existing Kodi Flatpak installation..."
     flatpak uninstall -y tv.kodi.Kodi &>/dev/null
     echo "Flatpak version removed."
+    echo ""
+fi
+
+# Check if PPA version already installed
+if command -v kodi &> /dev/null && dpkg -l | grep -q "^ii  kodi "; then
+    echo "Kodi PPA is already installed."
+    read -p "Reinstall anyway? (y/n): " -n 1 -r REINSTALL
+    echo ""
+    if [[ ! $REINSTALL =~ ^[Yy]$ ]]; then
+        echo "Installation cancelled."
+        read -p "Press Enter to exit..."
+        exit 0
+    fi
 fi
 
 echo "Installing Kodi PPA..."
@@ -699,7 +798,9 @@ apt-get install -y software-properties-common &>/dev/null
 add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
 apt-get update &>/dev/null
 apt-get install -y kodi &>/dev/null
+
 if command -v kodi &> /dev/null; then
+    echo ""
     echo "Kodi PPA installation complete!"
     echo "You can launch Kodi from the applications menu."
     echo ""
@@ -720,51 +821,66 @@ AUTOEOF
         chown -R kodi:kodi /home/kodi/.config/autostart
         echo "Kodi will now auto-start on boot."
     else
+        # Remove autostart if it exists
+        rm -f /home/kodi/.config/autostart/kodi.desktop
         echo "Kodi will NOT auto-start (launch manually from menu)."
     fi
 else
     echo "Kodi installation failed!"
 fi
-echo "The desktop launcher will now be deleted."
+echo ""
 read -p "Press Enter to exit..."
-rm -f /home/kodi/Desktop/install-kodi-ppa.desktop
-rm -f /home/kodi/Desktop/install-kodi-flatpak.desktop
-rm -f "$0"
 KODIPPAEOF
-    chmod +x /usr/local/bin/install-kodi-ppa.sh
-    
-    cat <<EOF >/home/kodi/Desktop/install-kodi-ppa.desktop
+chmod +x /usr/local/bin/install-kodi-ppa.sh
+
+cat <<EOF >/home/kodi/Desktop/install-kodi-ppa.desktop
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Install Kodi (PPA)
-Comment=Install Kodi v20.x from PPA
+Name=Switch to Kodi PPA
+Comment=Install/Switch to Kodi v20.x from PPA
 Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-ppa.sh"
 Terminal=false
 Icon=kodi
 Categories=System;
 EOF
-    chmod +x /home/kodi/Desktop/install-kodi-ppa.desktop
-    chown kodi:kodi /home/kodi/Desktop/install-kodi-ppa.desktop
-    
-    # Kodi Flatpak installer
-    cat <<'KODIFLATPAKEOF' >/usr/local/bin/install-kodi-flatpak.sh
+chmod +x /home/kodi/Desktop/install-kodi-ppa.desktop
+chown kodi:kodi /home/kodi/Desktop/install-kodi-ppa.desktop
+
+# Kodi Flatpak installer
+cat <<'KODIFLATPAKEOF' >/usr/local/bin/install-kodi-flatpak.sh
 #!/usr/bin/env bash
-echo "Installing Kodi via Flatpak (v21.x)..."
+echo "Installing/Switching to Kodi Flatpak (v21.x)..."
+echo ""
 
 # Check and remove PPA version if installed
-if command -v kodi &> /dev/null; then
+if command -v kodi &> /dev/null && dpkg -l | grep -q "^ii  kodi "; then
     echo "Removing existing Kodi PPA installation..."
     apt-get remove -y kodi kodi-bin kodi-data &>/dev/null
     apt-get autoremove -y &>/dev/null
     echo "PPA version removed."
+    echo ""
+fi
+
+# Check if Flatpak version already installed
+if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
+    echo "Kodi Flatpak is already installed."
+    read -p "Reinstall anyway? (y/n): " -n 1 -r REINSTALL
+    echo ""
+    if [[ ! $REINSTALL =~ ^[Yy]$ ]]; then
+        echo "Installation cancelled."
+        read -p "Press Enter to exit..."
+        exit 0
+    fi
 fi
 
 echo "Installing Kodi Flatpak..."
 apt-get install -y flatpak &>/dev/null
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
 flatpak install -y flathub tv.kodi.Kodi &>/dev/null
+
 if flatpak list | grep -q "tv.kodi.Kodi"; then
+    echo ""
     echo "Kodi Flatpak installation complete!"
     echo "You can launch Kodi from the applications menu."
     echo ""
@@ -785,33 +901,32 @@ AUTOEOF
         chown -R kodi:kodi /home/kodi/.config/autostart
         echo "Kodi will now auto-start on boot."
     else
+        # Remove autostart if it exists
+        rm -f /home/kodi/.config/autostart/kodi.desktop
         echo "Kodi will NOT auto-start (launch manually from menu)."
     fi
 else
     echo "Kodi Flatpak installation failed!"
 fi
-echo "The desktop launcher will now be deleted."
+echo ""
 read -p "Press Enter to exit..."
-rm -f /home/kodi/Desktop/install-kodi-ppa.desktop
-rm -f /home/kodi/Desktop/install-kodi-flatpak.desktop
-rm -f "$0"
 KODIFLATPAKEOF
-    chmod +x /usr/local/bin/install-kodi-flatpak.sh
-    
-    cat <<EOF >/home/kodi/Desktop/install-kodi-flatpak.desktop
+chmod +x /usr/local/bin/install-kodi-flatpak.sh
+
+cat <<EOF >/home/kodi/Desktop/install-kodi-flatpak.desktop
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Install Kodi (Flatpak)
-Comment=Install Kodi v21.x via Flatpak
+Name=Switch to Kodi Flatpak
+Comment=Install/Switch to Kodi v21.x via Flatpak
 Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-flatpak.sh"
 Terminal=false
 Icon=kodi
 Categories=System;
 EOF
-    chmod +x /home/kodi/Desktop/install-kodi-flatpak.desktop
-    chown kodi:kodi /home/kodi/Desktop/install-kodi-flatpak.desktop
-fi
+chmod +x /home/kodi/Desktop/install-kodi-flatpak.desktop
+chown kodi:kodi /home/kodi/Desktop/install-kodi-flatpak.desktop
+
 
 if [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     cat <<'FIREFOXEOF' >/usr/local/bin/install-firefox.sh
@@ -1030,9 +1145,14 @@ msg_info "Installing dependencies"
 apt-get install -y -f &>/dev/null
 msg_ok "Installed dependencies"
 
-# Set up Steam autostart only if requested
-if [ "$STEAM_AUTOSTART" = "yes" ]; then
-    msg_info "Setting up Steam auto-start"
+echo -e "\n${GN}Steam installation complete!${CL}"
+echo -e "You can launch Steam from the XFCE Applications menu."
+
+# Prompt for autostart
+read -p "Do you want Steam to auto-start on boot? (y/n): " -n 1 -r AUTOSTART
+echo ""
+
+if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
     mkdir -p /home/kodi/.config/autostart
     cat <<STEAMSTARTEOF >/home/kodi/.config/autostart/steam.desktop
 [Desktop Entry]
@@ -1042,12 +1162,11 @@ Exec=/usr/games/steam -silent %U
 X-XFCE-Autostart-enabled=true
 STEAMSTARTEOF
     chown kodi:kodi /home/kodi/.config/autostart/steam.desktop
-    msg_ok "Set up Steam auto-start"
+    echo "Steam will now auto-start on boot."
 else
-    msg_info "Steam autostart disabled (can launch manually)"
+    echo "Steam will NOT auto-start (launch manually from menu)."
 fi
 
-echo -e "\n${GN}Steam installation complete!${CL}"
 echo -e "\nThe desktop launcher will now be deleted."
 read -p "Press Enter to exit..."
 
@@ -1062,7 +1181,7 @@ STEAMEOF
 Version=1.0
 Type=Application
 Name=Install Steam
-Comment=Install Steam with auto-start enabled
+Comment=Install Steam and dependencies
 Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-steam.sh"
 Terminal=false
 Icon=steam
@@ -1071,6 +1190,7 @@ EOF
     chmod +x /home/kodi/Desktop/install-steam.desktop
     chown kodi:kodi /home/kodi/Desktop/install-steam.desktop
 fi
+
 
 msg_info "Restarting lightdm"
 systemctl restart lightdm
@@ -1084,7 +1204,8 @@ echo -e "  1. Boot into XFCE desktop"
 if [ -n "$KODI_EXEC" ]; then
     if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
         echo -e "  2. Automatically launch Kodi on boot"
-        echo -e "  3. Fall back to XFCE desktop when you exit Kodi"
+        echo -e "  3. XFCE panel will restart after Kodi exits (fixes volume control)"
+        echo -e "  4. ${YW}Note: Use desktop Shutdown/Reboot shortcuts (XFCE menu button may not work)${CL}"
     else
         echo -e "  2. Kodi installed (launch manually from menu)"
     fi
@@ -1092,33 +1213,8 @@ else
     echo -e "  2. No Kodi installed (pure XFCE desktop)"
 fi
 
-echo -e "  4. Allow shutdown/reboot from XFCE menu"
 echo -e "  5. Kodi user has full sudo access"
-echo -e "  6. ALSA mixer volume control via desktop shortcut"
-
-# Conditional Steam message
-if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
-    if [ "${STEAM_AUTOSTART:-yes}" = "yes" ]; then
-        echo -e "  7. Steam auto-starts in silent mode"
-    else
-        echo -e "  7. Steam installed (launch manually from menu)"
-    fi
-fi
-
-# Count skipped apps
-SKIPPED=0
-[ -z "$KODI_EXEC" ] && ((SKIPPED+=2))  # Count both Kodi installers
-[[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_CHROME =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_VLC =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
-
-if [ $SKIPPED -gt 0 ]; then
-    echo -e "  8. ${SKIPPED} app installer(s) available on desktop for later installation"
-fi
+echo -e "  6. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Audio"
 
 if [ "$SKIP_AUDIO" = false ]; then
     echo -e "\n${GN}Audio Configuration:${CL}"
@@ -1131,3 +1227,23 @@ else
     echo -e "  Use 'Configure Audio' desktop shortcut to set up audio"
     echo -e "  Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
 fi
+
+
+# Update the completion message to include app installer count
+# Find and replace the completion section
+
+# Count skipped apps
+SKIPPED=0
+((SKIPPED+=2))  # Always count both Kodi installers (always available)
+[[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_CHROME =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_VLC =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
+
+if [ $SKIPPED -gt 0 ]; then
+    echo -e "  7. ${SKIPPED} app installer(s) available on desktop for later installation"
+fi
+echo -e "\n${GN}All done! Enjoy your XFCE desktop.${CL}"
