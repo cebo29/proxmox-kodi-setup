@@ -236,78 +236,54 @@ fi
 if [ -n "$KODI_EXEC" ] && [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
     msg_info "Setting up Kodi exit monitor service"
     
-    cat > /etc/systemd/system/kodi-exit-monitor.service <<'KODIMONEOF'
+    cat > /usr/local/bin/kodi-exit-monitor.sh <<'KODIMONSCRIPT'
+#!/bin/bash
+# Monitor for Kodi process and restart panel when it exits
+
+while true; do
+    # Wait for Kodi to be running (check both native and flatpak)
+    while ! pgrep -x "kodi.bin" > /dev/null 2>&1 && ! pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
+        sleep 2
+    done
+    
+    # Kodi is running, wait for it to exit
+    while pgrep -x "kodi.bin" > /dev/null 2>&1 || pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
+        sleep 2
+    done
+    
+    # Kodi just exited, restart the panel with correct environment
+    sleep 1
+    su - kodi -c "DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 killall xfce4-panel; DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 xfce4-panel &"
+    
+    # Wait a bit before monitoring again
+    sleep 5
+done
+KODIMONSCRIPT
+    chmod +x /usr/local/bin/kodi-exit-monitor.sh
+    
+    # Create systemd service for the monitor
+    cat > /etc/systemd/system/kodi-exit-monitor.service <<'KODIMONSERVICE'
 [Unit]
-Description=Monitor Kodi Process and Restart XFCE Panel
-After=lightdm.service
-Requires=lightdm.service
+Description=Monitor Kodi exit and restart XFCE panel
+After=multi-user.target
 
 [Service]
 Type=simple
-User=kodi
-Environment="DISPLAY=:0"
-Environment="XAUTHORITY=/home/kodi/.Xauthority"
-Restart=always
-RestartSec=5
 ExecStart=/usr/local/bin/kodi-exit-monitor.sh
+Restart=always
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-KODIMONEOF
-
-    cat > /usr/local/bin/kodi-exit-monitor.sh <<'KODIMONSCRIPT'
-#!/bin/bash
-
-# Get kodi user's UID for proper session access
-KODI_UID=$(id -u kodi)
-export XDG_RUNTIME_DIR="/run/user/${KODI_UID}"
-export DISPLAY=:0
-export XAUTHORITY=/home/kodi/.Xauthority
-
-# Wait for X server to be ready
-while [ ! -e "$XAUTHORITY" ]; do
-    sleep 1
-done
-
-# Wait for Kodi to start
-while ! pgrep -x "kodi.bin" > /dev/null; do
-    sleep 2
-done
-
-# Wait for Kodi to exit
-while pgrep -x "kodi.bin" > /dev/null; do
-    sleep 2
-done
-
-# Restart the XFCE panel after Kodi exits
-# Kill existing panel
-killall xfce4-panel 2>/dev/null
-sleep 2
-
-# Start panel as kodi user with proper environment
-su - kodi -c "DISPLAY=:0 XAUTHORITY=/home/kodi/.Xauthority xfce4-panel" &
-
-# Give it time to start
-sleep 2
-
-# Verify it started
-if pgrep -x "xfce4-panel" > /dev/null; then
-    logger "kodi-exit-monitor: Panel restarted successfully"
-else
-    logger "kodi-exit-monitor: Panel restart FAILED"
-    # Try one more time with explicit display
-    su - kodi -c "DISPLAY=:0 xfce4-panel" &
-fi
-KODIMONSCRIPT
-
-    chmod +x /usr/local/bin/kodi-exit-monitor.sh
+KODIMONSERVICE
+    
     systemctl daemon-reload
     systemctl enable kodi-exit-monitor.service
     
     msg_ok "Set up Kodi exit monitor service"
-    echo -e "${YW}  Note: Panel restart may affect shutdown button permissions from XFCE menu${CL}"
-    echo -e "${YW}  Use desktop Shutdown/Reboot shortcuts instead${CL}"
 fi
+
+
 
 msg_info "Setting up PolicyKit permissions"
 mkdir -p /etc/polkit-1/localauthority/50-local.d
@@ -1230,8 +1206,6 @@ echo -e "  1. Boot into XFCE desktop"
 if [ -n "$KODI_EXEC" ]; then
     if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
         echo -e "  2. Automatically launch Kodi on boot"
-        echo -e "  3. XFCE panel will restart after Kodi exits (fixes volume control)"
-        echo -e "  4. ${YW}Note: Use desktop Shutdown/Reboot shortcuts (XFCE menu button may not work)${CL}"
     else
         echo -e "  2. Kodi installed (launch manually from menu)"
     fi
@@ -1239,8 +1213,9 @@ else
     echo -e "  2. No Kodi installed (pure XFCE desktop)"
 fi
 
-echo -e "  5. Kodi user has full sudo access"
-echo -e "  6. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Audio"
+echo -e "  3. Kodi user has full sudo access"
+echo -e "  4. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Audio"
+echo -e "  5. Shutdown/Reboot works from XFCE menu and desktop shortcuts"
 
 if [ "$SKIP_AUDIO" = false ]; then
     echo -e "\n${GN}Audio Configuration:${CL}"
@@ -1270,6 +1245,6 @@ SKIPPED=0
 [[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
 
 if [ $SKIPPED -gt 0 ]; then
-    echo -e "  7. ${SKIPPED} app installer(s) available on desktop for later installation"
+    echo -e "  6. ${SKIPPED} app installer(s) available on desktop for later installation"
 fi
 echo -e "\n${GN}All done! Enjoy your XFCE desktop.${CL}"
