@@ -340,8 +340,29 @@ EOF
         fi
     fi
 
-    # Pre-configure RetroArch for fullscreen and sensible defaults
+    # Install all available cores from the PPA dynamically
+    # NOTE: PPA install disables RetroArch's built-in Core Downloader,
+    # so cores MUST come from apt. We discover every libretro-* package
+    # available and install them all. Individual failures are non-fatal.
     if [ "$RETROARCH_INSTALLED" = true ]; then
+        # ── Install all available cores from PPA ──────────────────────────────
+        # PPA installs disable RetroArch's built-in Core Downloader, so cores
+        # MUST come from apt. Dynamically discover every libretro-* package.
+        msg_info "Discovering available RetroArch cores"
+        CORE_PKGS=$(apt-cache search --names-only '^libretro-' 2>/dev/null | awk '{print $1}' | grep -v '^retroarch')
+        if [ -n "$CORE_PKGS" ]; then
+            CORE_COUNT=$(echo "$CORE_PKGS" | wc -l)
+            msg_ok "Found $CORE_COUNT core packages — installing"
+            msg_info "Installing RetroArch cores (this may take a minute)"
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                --ignore-missing $CORE_PKGS &>/dev/null || true
+            INSTALLED_COUNT=$(dpkg -l 'libretro-*' 2>/dev/null | grep '^ii' | wc -l)
+            msg_ok "Installed $INSTALLED_COUNT RetroArch cores"
+        else
+            msg_error "No libretro-* packages found in PPA — try adding ppa:libretro/testing for more cores"
+        fi
+
+        # ── Configure RetroArch defaults ──────────────────────────────────────
         msg_info "Configuring RetroArch defaults"
         RETROARCH_CFG_DIR="/home/kodi/.config/retroarch"
         mkdir -p "$RETROARCH_CFG_DIR"
@@ -352,23 +373,22 @@ EOF
 video_fullscreen = "true"
 video_windowed_fullscreen = "false"
 
-# Use the system assets installed by retroarch-assets
+# System asset paths (installed by retroarch-assets package)
 assets_directory = "/usr/share/retroarch-assets"
 libretro_info_path = "/usr/share/libretro/info"
+libretro_directory = "/usr/lib/libretro"
 
 # Sane performance defaults
 video_threaded = "true"
 video_smooth = "false"
 audio_sync = "true"
 
-# Allow quit via Esc or dedicated hotkey
+# Quit with Esc, toggle menu with F1
 input_exit_emulator = escape
-
-# Enable menu toggle with F1
 input_menu_toggle = f1
 EOF
         chown -R kodi:kodi "$RETROARCH_CFG_DIR"
-        msg_ok "RetroArch configured (fullscreen, assets path set)"
+        msg_ok "RetroArch configured (fullscreen, core path set)"
     fi
 fi
 
@@ -491,6 +511,13 @@ mkdir -p "$CONFIG_DIR"
 # Black background — nothing visible except our dialog
 xsetroot -solid black 2>/dev/null || true
 
+# ── Detect screen resolution for fullscreen-sized dialogs ────────────────────
+# Falls back to 1920x1080 if xdpyinfo is unavailable
+SCREEN_W=$(xdpyinfo 2>/dev/null | grep -m1 dimensions | awk '{print $2}' | cut -dx -f1)
+SCREEN_H=$(xdpyinfo 2>/dev/null | grep -m1 dimensions | awk '{print $2}' | cut -dx -f2)
+SCREEN_W=${SCREEN_W:-1920}
+SCREEN_H=${SCREEN_H:-1080}
+
 # ── Detect installed apps ────────────────────
 detect_apps() {
     HAVE_KODI=false
@@ -547,7 +574,7 @@ Press Cancel to open the session menu."
     ) | zenity --progress \
             --title="Session Manager" \
             --text="Preparing $label..." \
-            --width=420 \
+            --width="$SCREEN_W" \
             --auto-close \
             2>/dev/null
     return $?
@@ -567,7 +594,7 @@ show_menu() {
         --title="Session Manager" \
         --text="Welcome! What would you like to do?$subtitle" \
         --column="Session" --column="Description" \
-        --width=520 --height=460 \
+        --width="$SCREEN_W" --height="$SCREEN_H" \
         --hide-column=0 --print-column=1 \
         "${MENU_ROWS[@]}" \
         2>/dev/null
@@ -587,7 +614,7 @@ change_default() {
         --title="Change Boot Default" \
         --text="Which session starts automatically on boot?" \
         --column="Session" --column="Description" \
-        --width=500 --height=340 \
+        --width="$SCREEN_W" --height="$SCREEN_H" \
         --hide-column=0 --print-column=1 \
         "${opts[@]}" 2>/dev/null)
     [ -z "$chosen" ] && return
@@ -621,11 +648,13 @@ launch_app() {
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            # -gamepadui is Steam's Big Picture fullscreen mode
+            # -gamepadui = Big Picture mode, -fulldesktopres forces full resolution
+            # xrandr nudge ensures X reports correct resolution to Steam
+            xrandr --auto 2>/dev/null || true
             if command -v steam &>/dev/null; then
-                steam -gamepadui
+                steam -gamepadui -fulldesktopres
             elif [ -f /usr/games/steam ]; then
-                /usr/games/steam -gamepadui
+                /usr/games/steam -gamepadui -fulldesktopres
             fi
             ;;
     esac
@@ -719,10 +748,11 @@ cat > /home/kodi/Desktop/session-manager.desktop <<'EOF'
 Version=1.0
 Type=Application
 Name=Exit to Session Manager
-Comment=Close desktop and return to session chooser
-Exec=xfce4-session-logout --logout
+Comment=Log out of desktop and return to session chooser
+Exec=xfce4-session-logout
 Icon=system-log-out
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
 cat > /home/kodi/Desktop/configure-audio.desktop <<'EOF'
@@ -734,6 +764,7 @@ Comment=Set audio output device
 Exec=/usr/local/bin/configure-audio.sh
 Icon=multimedia-volume-control
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
 cat > /home/kodi/Desktop/volume-control.desktop <<'EOF'
@@ -744,16 +775,21 @@ Name=Volume Control (ALSA)
 Exec=xfce4-terminal --title="Volume Control" -e "alsamixer"
 Icon=multimedia-volume-control
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
+# Shutdown and reboot must go through xfce4-session in a desktop context
+# to avoid the DBus InvalidArgs error caused by calling systemctl directly.
+# xfce4-session-logout --halt and --reboot use the correct XFCE/logind path.
 cat > /home/kodi/Desktop/shutdown.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Shutdown
-Exec=systemctl poweroff
+Exec=xfce4-session-logout --halt
 Icon=system-shutdown
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
 cat > /home/kodi/Desktop/reboot.desktop <<'EOF'
@@ -761,16 +797,41 @@ cat > /home/kodi/Desktop/reboot.desktop <<'EOF'
 Version=1.0
 Type=Application
 Name=Reboot
-Exec=systemctl reboot
+Exec=xfce4-session-logout --reboot
 Icon=system-reboot
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
 for f in /home/kodi/Desktop/*.desktop; do
     chmod +x "$f"
     chown kodi:kodi "$f"
-    sudo -u kodi gio set "$f" metadata::trusted true 2>/dev/null || true
 done
+
+# gio set metadata::trusted only works inside a live GVfs session, so we
+# create a self-deleting XFCE autostart script that runs it on first login.
+cat > /home/kodi/.config/autostart/trust-desktop-shortcuts.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Trust Desktop Shortcuts
+Comment=Sets trusted flag on desktop icons (runs once)
+Exec=/usr/local/bin/trust-desktop-shortcuts.sh
+X-XFCE-Autostart-enabled=true
+EOF
+
+cat > /usr/local/bin/trust-desktop-shortcuts.sh <<'EOF'
+#!/usr/bin/env bash
+# Runs once on first XFCE login to mark all desktop shortcuts as trusted.
+# Deletes itself after running so it never appears again.
+sleep 2  # give GVfs a moment to start
+for f in ~/Desktop/*.desktop; do
+    gio set "$f" metadata::trusted true 2>/dev/null || true
+done
+rm -f ~/.config/autostart/trust-desktop-shortcuts.desktop
+rm -f "$0"
+EOF
+chmod +x /usr/local/bin/trust-desktop-shortcuts.sh
+
 msg_ok "Desktop shortcuts created"
 
 # ─────────────────────────────────────────────
@@ -803,6 +864,7 @@ Type=Application
 Name=${label}
 Exec=xfce4-terminal --hold -e "sudo ${script}"
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 DESKEOF
     chmod +x "$desktop"
     chown kodi:kodi "$desktop"
@@ -857,6 +919,7 @@ Name=Switch to Kodi (PPA)
 Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-ppa.sh"
 Icon=kodi
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
 cat > /usr/local/bin/install-kodi-flatpak.sh <<'EOF'
@@ -879,12 +942,12 @@ Name=Switch to Kodi (Flatpak)
 Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-flatpak.sh"
 Icon=kodi
 Terminal=false
+X-XFCE-DesktopFile-Trusted=true
 EOF
 
 for f in /home/kodi/Desktop/*.desktop; do
     chmod +x "$f"
     chown kodi:kodi "$f"
-    sudo -u kodi gio set "$f" metadata::trusted true 2>/dev/null || true
 done
 
 chown -R kodi:kodi /home/kodi/.config /home/kodi/Desktop
