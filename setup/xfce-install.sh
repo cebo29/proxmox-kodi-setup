@@ -224,36 +224,15 @@ if [ -n "$KODI_EXEC" ]; then
     # Check if autostart is enabled (default to yes)
     if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
         mkdir -p /home/kodi/.config/autostart
-
-        # Wrapper script: gives XFCE and PulseAudio a few seconds to finish
-        # initializing before Kodi starts. Without this delay, Kodi launches
-        # before PulseAudio is ready and exits silently.
-        cat > /usr/local/bin/kodi-autostart.sh <<KODISTART
-#!/usr/bin/env bash
-sleep 5
-exec ${KODI_EXEC}
-KODISTART
-        chmod +x /usr/local/bin/kodi-autostart.sh
-
-        # Complete XDG autostart desktop file.
-        # Hidden=false and StartupNotify=false are required — without them
-        # xfce4-session may skip the entry or wait for a startup notification
-        # that Kodi never sends.  X-GNOME-Autostart-enabled is the standard
-        # key that XFCE (and other session managers) honour.
         cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
 [Desktop Entry]
 Type=Application
 Name=Kodi
-Comment=Kodi Media Center
-Exec=/usr/local/bin/kodi-autostart.sh
-Terminal=false
-Hidden=false
-NoDisplay=false
-StartupNotify=false
-X-GNOME-Autostart-enabled=true
+Exec=$KODI_EXEC
+X-XFCE-Autostart-enabled=true
 KODIEOF
         chown -R kodi:kodi /home/kodi/.config
-        msg_ok "Set up Kodi autostart (with 5s delay for session init)"
+        msg_ok "Set up Kodi autostart"
     else
         msg_info "Kodi installed but autostart disabled (launch manually from menu)"
     fi
@@ -822,19 +801,6 @@ RAEOF
         chown kodi:kodi /home/kodi/Desktop/RetroArch.desktop
         sudo -u kodi gio set /home/kodi/Desktop/RetroArch.desktop metadata::trusted true 2>/dev/null || true
 
-        # ── Kodi Favourites entry ─────────────────────────────────────────────
-        # Add RetroArch to Kodi Favourites via a plain XML file.
-        # Using a Python addon would trigger Kodi's "unknown source" approval
-        # dialog on first launch, which hangs the autostart silently.
-        # Favourites.xml is read by Kodi with no prompts and no addon overhead.
-        mkdir -p /home/kodi/.kodi/userdata
-        cat > /home/kodi/.kodi/userdata/favourites.xml <<'RAFAVEOF'
-<favourites>
-    <favourite name="RetroArch" thumb="">RunProgram(retroarch)</favourite>
-</favourites>
-RAFAVEOF
-        chown -R kodi:kodi /home/kodi/.kodi
-        msg_ok "Added RetroArch to Kodi Favourites (Kodi → Favourites → RetroArch)"
     else
         msg_error "RetroArch installation failed"; FAILED_APPS+=("RetroArch")
     fi
@@ -1289,15 +1255,6 @@ RADESKTOP
 chmod +x /home/kodi/Desktop/RetroArch.desktop
 chown kodi:kodi /home/kodi/Desktop/RetroArch.desktop
 
-# Kodi Favourites entry (same approach as main install)
-mkdir -p /home/kodi/.kodi/userdata
-cat > /home/kodi/.kodi/userdata/favourites.xml <<'RAFAVEOF'
-<favourites>
-    <favourite name="RetroArch" thumb="">RunProgram(retroarch)</favourite>
-</favourites>
-RAFAVEOF
-chown -R kodi:kodi /home/kodi/.kodi
-echo "  ✓ RetroArch added to Kodi Favourites (Kodi → Favourites → RetroArch)"
 echo ""
 echo "Installation complete!"
 echo "  • ROMs directory: ~/ROMs"
@@ -1361,17 +1318,16 @@ echo -e "  4. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Aud
 echo -e "  5. Shutdown/Reboot works from XFCE menu and desktop shortcuts"
 
 # Count skipped apps
-# Use if-blocks instead of [[ ]] && (( )) — the && form leaks exit code 1
-# when the test is false (app IS installed), which can abort the script.
-SKIPPED=2  # Always include both Kodi switcher shortcuts
-if [[ ! $INSTALL_FIREFOX    =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_BRAVE      =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_CHROME     =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_VLC        =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_GIMP       =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_STEAM      =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
-if [[ ! $INSTALL_RETROARCH  =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+SKIPPED=0
+((SKIPPED+=2))  # Always count both Kodi installers (always available)
+[[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_CHROME =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_VLC =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]] && ((SKIPPED++))
 
 if [ $SKIPPED -gt 0 ]; then
     echo -e "  6. ${SKIPPED} app installer(s) available on desktop for later installation"
