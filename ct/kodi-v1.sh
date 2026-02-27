@@ -54,15 +54,6 @@ function msg_ok() {
     local msg="$1"
     echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
 }
-function PVE_CHECK() {
-    PVE=$(pveversion | grep "pve-manager/7" | wc -l)
-if [[ $PVE != 1 ]]; then
-   echo -e "${RD}This script requires Proxmox Virtual Environment 7.0 or greater${CL}"
-   echo -e "Exiting..."
-   sleep 2
-   exit
-fi
-}
 
 SETTINGS_FILE="/root/.kodi-lxc-settings.conf"
 
@@ -312,6 +303,11 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
             whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
             continue
         fi
+        # Validate: MAME addon needs Kodi
+        if [[ "$APPS" == *"MAME_ADDON"* ]] && [[ "$APPS" != *"KODI_PPA"* ]] && [[ "$APPS" != *"KODI_FLATPAK"* ]]; then
+            whiptail --msgbox "Warning: MAME as Kodi addon requires Kodi to be installed!\n\nPlease also select:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nAlternatively, select MAME standalone instead.\n\nClick OK to re-select applications." 16 58 --title "KODI REQUIRED"
+            continue
+        fi
         break
     done
     
@@ -350,6 +346,12 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
 else
     INSTALL_MODE="standalone"
     echo -e "${GN}Selected: Standalone Kodi${CL}"
+    # Initialize xfce-only vars so save_settings() doesn't fail with nounset
+    KODI_PASS=""
+    CONFIGURE_AUDIO=""
+    KODI_AUTOSTART=""
+    STEAM_AUTOSTART=""
+    INSTALL_APPS=""
 fi
 
 # Ask if user wants to save settings
@@ -456,6 +458,11 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
               whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
               continue
           fi
+          # Validate: MAME addon needs Kodi
+          if [[ "$APPS" == *"MAME_ADDON"* ]] && [[ "$APPS" != *"KODI_PPA"* ]] && [[ "$APPS" != *"KODI_FLATPAK"* ]]; then
+              whiptail --msgbox "Warning: MAME as Kodi addon requires Kodi to be installed!\n\nPlease also select:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nAlternatively, select MAME standalone instead.\n\nClick OK to re-select applications." 16 58 --title "KODI REQUIRED"
+              continue
+          fi
           break
       done
       
@@ -494,6 +501,12 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
   else
       INSTALL_MODE="standalone"
       echo -e "${GN}Selected: Standalone Kodi${CL}"
+      # Initialize xfce-only vars so save_settings() doesn't fail with nounset
+      KODI_PASS=""
+      CONFIGURE_AUDIO=""
+      KODI_AUTOSTART=""
+      STEAM_AUTOSTART=""
+      INSTALL_APPS=""
   fi
   
   # Ask if user wants to save settings
