@@ -19,6 +19,7 @@ INSTALL_VLC="${INSTALL_VLC:-n}"
 INSTALL_GIMP="${INSTALL_GIMP:-n}"
 INSTALL_STEAM="${INSTALL_STEAM:-n}"
 INSTALL_MAME="${INSTALL_MAME:-n}"
+INSTALL_MAME_ADDON="${INSTALL_MAME_ADDON:-n}"
 INSTALL_RETROARCH="${INSTALL_RETROARCH:-n}"
 
 function msg_info() {
@@ -99,7 +100,9 @@ if [ -n "$INSTALL_APPS" ]; then
     [[ "$INSTALL_APPS" == *"VLC"* ]] && INSTALL_VLC="y" || INSTALL_VLC="n"
     [[ "$INSTALL_APPS" == *"GIMP"* ]] && INSTALL_GIMP="y" || INSTALL_GIMP="n"
     [[ "$INSTALL_APPS" == *"STEAM"* ]] && INSTALL_STEAM="y" || INSTALL_STEAM="n"
-    [[ "$INSTALL_APPS" == *"MAME"* ]] && INSTALL_MAME="y" || INSTALL_MAME="n"
+    # Use quoted token match so "MAME_ADDON" doesn't trigger standalone MAME
+    [[ "$INSTALL_APPS" == *'"MAME"'* ]] && INSTALL_MAME="y" || INSTALL_MAME="n"
+    [[ "$INSTALL_APPS" == *"MAME_ADDON"* ]] && INSTALL_MAME_ADDON="y" || INSTALL_MAME_ADDON="n"
     [[ "$INSTALL_APPS" == *"RETROARCH"* ]] && INSTALL_RETROARCH="y" || INSTALL_RETROARCH="n"
 else
     # Fallback to interactive prompts if INSTALL_APPS not set
@@ -160,7 +163,11 @@ else
     echo
 
     # MAME
-    read -p "Install MAME (Arcade Emulator)? (y/n): " -n 1 -r INSTALL_MAME
+    read -p "Install MAME standalone? (y/n): " -n 1 -r INSTALL_MAME
+    echo
+
+    # MAME Kodi addon (can be installed alongside standalone)
+    read -p "Install MAME as Kodi addon? (y/n): " -n 1 -r INSTALL_MAME_ADDON
     echo
 
     # RetroArch
@@ -778,7 +785,10 @@ fi
 # ── MAME ──────────────────────────────────────────────────────────────────────
 if [[ $INSTALL_MAME =~ ^[Yy]$ ]]; then
     msg_info "Installing MAME"
-    apt-get install -y mame mame-data mame-doc &>/dev/null
+    # mame-doc was removed from Ubuntu 22.04; universe repo must be enabled
+    add-apt-repository -y universe &>/dev/null
+    apt-get update &>/dev/null
+    apt-get install -y mame &>/dev/null
     if command -v mame &> /dev/null; then
         msg_ok "Installed MAME"
         # Create a ROM directory for the kodi user
@@ -801,6 +811,56 @@ MAMEEOF
         sudo -u kodi gio set /home/kodi/Desktop/MAME.desktop metadata::trusted true 2>/dev/null || true
     else
         msg_error "MAME installation failed"
+    fi
+fi
+
+# ── MAME as Kodi addon ────────────────────────────────────────────────────────
+if [[ $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
+    msg_info "Installing MAME Kodi addon"
+    apt-get install -y unzip wget &>/dev/null
+
+    # Pick the correct Kodi mirror repo based on which Kodi was installed
+    if [[ "$INSTALL_APPS" == *"KODI_FLATPAK"* ]]; then
+        KODI_REPO="omega"   # Flatpak = Kodi 21.x
+    else
+        KODI_REPO="nexus"   # PPA = Kodi 20.x
+    fi
+
+    ADDON_BASE_URL="https://mirrors.kodi.tv/addons/${KODI_REPO}"
+    ADDON_DIR="/home/kodi/.kodi/addons"
+    mkdir -p "$ADDON_DIR"
+
+    # Helper: download and extract an addon zip from the Kodi mirror
+    install_kodi_addon() {
+        local addon_id="$1"
+        local addon_xml version
+        addon_xml=$(wget -qO- "${ADDON_BASE_URL}/${addon_id}/addon.xml" 2>/dev/null)
+        [ -z "$addon_xml" ] && return 1
+        # Extract version from the addon's own id= attribute line
+        version=$(echo "$addon_xml" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
+        # Fallback: first version= in the file
+        [ -z "$version" ] && version=$(echo "$addon_xml" | grep -oP 'version="\K[^"]+' | head -1)
+        [ -z "$version" ] && return 1
+        wget -qO "/tmp/${addon_id}.zip" \
+            "${ADDON_BASE_URL}/${addon_id}/${addon_id}-${version}.zip" 2>/dev/null || return 1
+        unzip -qo "/tmp/${addon_id}.zip" -d "$ADDON_DIR" 2>/dev/null || return 1
+        rm -f "/tmp/${addon_id}.zip"
+        return 0
+    }
+
+    # game.libretro is the base libretro wrapper Kodi needs (dependency of game.libretro.mame)
+    ADDON_OK=true
+    install_kodi_addon "game.libretro"      || ADDON_OK=false
+    install_kodi_addon "game.libretro.mame" || ADDON_OK=false
+
+    if $ADDON_OK && [ -d "$ADDON_DIR/game.libretro.mame" ]; then
+        # Create ROMs directory and set ownership of everything
+        mkdir -p /home/kodi/ROMs/mame
+        chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
+        msg_ok "Installed MAME Kodi addon"
+        echo -e "   ${GN}→ Add ~/ROMs/mame as a Games source in Kodi to browse your library${CL}"
+    else
+        msg_error "MAME Kodi addon installation failed (check internet or Kodi repo availability)"
     fi
 fi
 
@@ -1258,8 +1318,10 @@ if [[ ! $INSTALL_MAME =~ ^[Yy]$ ]]; then
     cat <<'MAMEINSTEOF' >/usr/local/bin/install-mame.sh
 #!/usr/bin/env bash
 echo "Installing MAME..."
+# mame-doc was removed from Ubuntu 22.04; universe repo must be enabled
+add-apt-repository -y universe &>/dev/null
 apt-get update &>/dev/null
-apt-get install -y mame mame-data mame-doc &>/dev/null
+apt-get install -y mame &>/dev/null
 if command -v mame &> /dev/null; then
     echo "MAME installation complete!"
     mkdir -p /home/kodi/ROMs/mame
@@ -1302,6 +1364,84 @@ Categories=System;
 EOF
     chmod +x /home/kodi/Desktop/install-mame.desktop
     chown kodi:kodi /home/kodi/Desktop/install-mame.desktop
+fi
+
+# ── MAME Kodi addon desktop installer (if skipped) ────────────────────────────
+if [[ ! $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
+    cat <<'MAMEADDONINSTEOF' >/usr/local/bin/install-mame-addon.sh
+#!/usr/bin/env bash
+echo "Installing MAME as a Kodi addon..."
+echo ""
+apt-get install -y unzip wget &>/dev/null
+
+# Detect installed Kodi version to pick correct mirror repo
+if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
+    KODI_REPO="omega"
+else
+    KODI_REPO="nexus"
+fi
+echo "Using Kodi repo: ${KODI_REPO}"
+
+ADDON_BASE_URL="https://mirrors.kodi.tv/addons/${KODI_REPO}"
+ADDON_DIR="/home/kodi/.kodi/addons"
+mkdir -p "$ADDON_DIR"
+
+install_kodi_addon() {
+    local addon_id="$1"
+    local addon_xml version
+    addon_xml=$(wget -qO- "${ADDON_BASE_URL}/${addon_id}/addon.xml" 2>/dev/null)
+    [ -z "$addon_xml" ] && return 1
+    version=$(echo "$addon_xml" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
+    [ -z "$version" ] && version=$(echo "$addon_xml" | grep -oP 'version="\K[^"]+' | head -1)
+    [ -z "$version" ] && return 1
+    wget -qO "/tmp/${addon_id}.zip" \
+        "${ADDON_BASE_URL}/${addon_id}/${addon_id}-${version}.zip" 2>/dev/null || return 1
+    unzip -qo "/tmp/${addon_id}.zip" -d "$ADDON_DIR" 2>/dev/null || return 1
+    rm -f "/tmp/${addon_id}.zip"
+    echo "  Installed: ${addon_id} v${version}"
+    return 0
+}
+
+ADDON_OK=true
+echo "Downloading game.libretro (dependency)..."
+install_kodi_addon "game.libretro"      || ADDON_OK=false
+echo "Downloading game.libretro.mame..."
+install_kodi_addon "game.libretro.mame" || ADDON_OK=false
+
+if $ADDON_OK && [ -d "$ADDON_DIR/game.libretro.mame" ]; then
+    mkdir -p /home/kodi/ROMs/mame
+    chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
+    echo ""
+    echo "MAME Kodi addon installed successfully!"
+    echo "Next steps:"
+    echo "  1. Open Kodi"
+    echo "  2. Go to Add-ons -> Enable 'MAME' if prompted"
+    echo "  3. Add Games source pointing to ~/ROMs/mame"
+    echo ""
+    echo "The desktop installer will now be deleted."
+    rm -f /home/kodi/Desktop/install-mame-addon.desktop
+    rm -f "$0"
+else
+    echo ""
+    echo "Installation failed. Check your internet connection and try again."
+fi
+read -p "Press Enter to exit..."
+MAMEADDONINSTEOF
+    chmod +x /usr/local/bin/install-mame-addon.sh
+
+    cat <<EOF >/home/kodi/Desktop/install-mame-addon.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install MAME Kodi Addon
+Comment=Install MAME as a Kodi addon (runs inside Kodi)
+Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-mame-addon.sh"
+Terminal=false
+Icon=kodi
+Categories=System;
+EOF
+    chmod +x /home/kodi/Desktop/install-mame-addon.desktop
+    chown kodi:kodi /home/kodi/Desktop/install-mame-addon.desktop
 fi
 
 # ── RetroArch desktop installer (if skipped) ──────────────────────────────────
@@ -1406,6 +1546,7 @@ SKIPPED=0
 [[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_MAME =~ ^[Yy]$ ]] && ((SKIPPED++))
+[[ ! $INSTALL_MAME_ADDON =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]] && ((SKIPPED++))
 
 if [ $SKIPPED -gt 0 ]; then
