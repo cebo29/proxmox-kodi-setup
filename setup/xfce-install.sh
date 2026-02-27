@@ -741,7 +741,73 @@ msg_info "Configuring XFCE desktop shortcuts"
 mkdir -p /home/kodi/.config/autostart
 mkdir -p /home/kodi/Desktop
 
-# No session-manager autostart in XFCE — it is the session, not a child of XFCE
+# ── Shortcuts for installed apps ─────────────────────────────────────────────
+if [ "$KODI_INSTALLED" = true ]; then
+    if [[ "${INSTALL_KODI_PPA}" =~ ^[Yy] ]]; then
+        cat > /home/kodi/Desktop/kodi.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Kodi
+Comment=Launch Kodi Media Center
+Exec=kodi
+Icon=kodi
+Terminal=false
+X-XFCE-DesktopFile-Trusted=true
+EOF
+    else
+        cat > /home/kodi/Desktop/kodi.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Kodi
+Comment=Launch Kodi Media Center (Flatpak)
+Exec=flatpak run tv.kodi.Kodi
+Icon=kodi
+Terminal=false
+X-XFCE-DesktopFile-Trusted=true
+EOF
+    fi
+fi
+
+if [ "$RETROARCH_INSTALLED" = true ]; then
+    cat > /home/kodi/Desktop/retroarch.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=RetroArch
+Comment=Launch RetroArch emulation frontend
+Exec=retroarch --fullscreen
+Icon=retroarch
+Terminal=false
+X-XFCE-DesktopFile-Trusted=true
+EOF
+fi
+
+if [ "$STEAM_INSTALLED" = true ]; then
+    cat > /home/kodi/Desktop/steam-bigpicture.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Steam Big Picture
+Comment=Launch Steam in Big Picture mode
+Exec=steam -gamepadui -fulldesktopres
+Icon=steam
+Terminal=false
+X-XFCE-DesktopFile-Trusted=true
+EOF
+    cat > /home/kodi/Desktop/steam.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Steam
+Comment=Launch Steam normally
+Exec=steam
+Icon=steam
+Terminal=false
+X-XFCE-DesktopFile-Trusted=true
+EOF
+fi
 
 cat > /home/kodi/Desktop/session-manager.desktop <<'EOF'
 [Desktop Entry]
@@ -837,7 +903,7 @@ msg_ok "Desktop shortcuts created"
 # ─────────────────────────────────────────────
 # Per-app installer shortcuts for skipped apps
 # ─────────────────────────────────────────────
-msg_info "Creating installer shortcuts for skipped apps"
+msg_info "Creating app installer shortcuts"
 
 write_installer_shortcut() {
     local key="$1"
@@ -850,9 +916,7 @@ write_installer_shortcut() {
 #!/usr/bin/env bash
 echo "${label}..."
 ${cmd}
-echo "Done. Removing this launcher..."
-rm -f "$desktop"
-rm -f "\$0"
+echo "Done."
 read -p "Press Enter to close..."
 SCRIPTEOF
     chmod +x "$script"
@@ -870,8 +934,8 @@ DESKEOF
     chown kodi:kodi "$desktop"
 }
 
-if ! [ "$RETROARCH_INSTALLED" = true ]; then
-    write_installer_shortcut "RETROARCH" "Install RetroArch" \
+! [ "$RETROARCH_INSTALLED" = true ] && \
+write_installer_shortcut "RETROARCH" "Install RetroArch" \
 'apt-get install -y software-properties-common &>/dev/null
 add-apt-repository -y ppa:libretro/stable &>/dev/null
 apt-get update &>/dev/null
@@ -882,22 +946,51 @@ else
     apt-get install -y flatpak &>/dev/null
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
     flatpak install -y --noninteractive flathub org.libretro.RetroArch &>/dev/null
-    printf "#!/usr/bin/env bash\nexec flatpak run org.libretro.RetroArch \"\$@\"\n" > /usr/local/bin/retroarch
+    printf "#!/usr/bin/env bash\nexec flatpak run org.libretro.RetroArch \"$@\"\n" > /usr/local/bin/retroarch
     chmod +x /usr/local/bin/retroarch
     echo "RetroArch installed via Flatpak."
-fi
-echo ""
-echo "Download cores: Main Menu → Online Updater → Core Downloader"'
-fi
+fi'
 
-if ! [ "$STEAM_INSTALLED" = true ]; then
-    write_installer_shortcut "STEAM" "Install Steam" \
+! [ "$STEAM_INSTALLED" = true ] && \
+write_installer_shortcut "STEAM" "Install Steam" \
 'dpkg --add-architecture i386 &>/dev/null
 apt-get update &>/dev/null
 apt-get install -y steam-installer &>/dev/null
 apt-get install -y -f &>/dev/null
 echo "Steam installed."'
-fi
+
+! [[ "${INSTALL_FIREFOX}" =~ ^[Yy] ]] && \
+write_installer_shortcut "FIREFOX" "Install Firefox" \
+'apt-get install -y firefox &>/dev/null && echo "Firefox installed." || echo "Install failed."'
+
+! [[ "${INSTALL_BRAVE}" =~ ^[Yy] ]] && \
+write_installer_shortcut "BRAVE" "Install Brave" \
+'curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+    https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] \
+https://brave-browser-apt-release.s3.brave.com/ stable main" \
+    > /etc/apt/sources.list.d/brave-browser-release.list
+apt-get update &>/dev/null
+apt-get install -y brave-browser &>/dev/null && echo "Brave installed." || echo "Install failed."'
+
+! [[ "${INSTALL_CHROME}" =~ ^[Yy] ]] && \
+write_installer_shortcut "CHROME" "Install Google Chrome" \
+'wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb
+apt-get install -y /tmp/chrome.deb &>/dev/null
+rm -f /tmp/chrome.deb
+command -v google-chrome &>/dev/null && echo "Chrome installed." || echo "Install failed."'
+
+! [[ "${INSTALL_LIBREOFFICE}" =~ ^[Yy] ]] && \
+write_installer_shortcut "LIBREOFFICE" "Install LibreOffice" \
+'apt-get install -y libreoffice &>/dev/null && echo "LibreOffice installed." || echo "Install failed."'
+
+! [[ "${INSTALL_VLC}" =~ ^[Yy] ]] && \
+write_installer_shortcut "VLC" "Install VLC" \
+'apt-get install -y vlc &>/dev/null && echo "VLC installed." || echo "Install failed."'
+
+! [[ "${INSTALL_GIMP}" =~ ^[Yy] ]] && \
+write_installer_shortcut "GIMP" "Install GIMP" \
+'apt-get install -y gimp &>/dev/null && echo "GIMP installed." || echo "Install failed."'
 
 # Kodi version switcher shortcuts (always present)
 cat > /usr/local/bin/install-kodi-ppa.sh <<'EOF'
