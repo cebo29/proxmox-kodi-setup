@@ -265,7 +265,7 @@ else
   fi  
 fi
 
-# Ask user which installation mode they want (MOVED HERE - BEFORE "Ready to create")
+# Ask user which installation mode they want
 if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
     INSTALL_MODE="xfce"
     echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
@@ -289,22 +289,24 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         echo -e "${YW}Audio configuration will be skipped${CL}"
     fi
     
-    # Optional software selection (including Kodi) - with validation loop
+    # Optional software selection - with validation loop
     while true; do
         APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-            "Select applications to install:" 18 68 9 \
-            "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
+            "Select applications to install:" 22 68 11 \
+            "KODI_PPA"    "Kodi Media Center (PPA - v20.x)"    OFF \
             "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
-            "FIREFOX" "Firefox web browser" OFF \
-            "BRAVE" "Brave web browser" OFF \
-            "CHROME" "Google Chrome" OFF \
-            "LIBREOFFICE" "LibreOffice suite" OFF \
-            "VLC" "VLC Media Player" OFF \
-            "GIMP" "GIMP Image Editor" OFF \
-            "STEAM" "Steam gaming platform" OFF \
+            "FIREFOX"     "Firefox web browser"                OFF \
+            "BRAVE"       "Brave web browser"                  OFF \
+            "CHROME"      "Google Chrome"                      OFF \
+            "LIBREOFFICE" "LibreOffice suite"                  OFF \
+            "VLC"         "VLC Media Player"                   OFF \
+            "GIMP"        "GIMP Image Editor"                  OFF \
+            "STEAM"       "Steam gaming platform"              OFF \
+            "MAME"        "MAME arcade emulator"               OFF \
+            "RETROARCH"   "RetroArch multi-system emulator"    OFF \
             3>&1 1>&2 2>&3)
         
-        # Validate Kodi selection (can't install both)
+        # Validate: can't install both Kodi versions
         if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
             whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
             continue
@@ -377,11 +379,10 @@ if [ -f "$SETTINGS_FILE" ]; then
         
         if (whiptail --title "USE SAVED SETTINGS?" --yesno "Use these saved settings?" 10 58); then
             echo -e "${GN}Using saved settings${CL}"
-            # Settings already loaded, just need to get next container ID
             CT_ID=$(pvesh get /cluster/nextid)
             echo -e "${DGN}Using Next Available Container ID: ${BGN}$CT_ID${CL}"
             
-            # Set defaults for XFCE variables if they don't exist (old saved settings compatibility)
+            # Set defaults for variables if they don't exist (old saved settings compatibility)
             KODI_PASS="${KODI_PASS:-kodi}"
             CONFIGURE_AUDIO="${CONFIGURE_AUDIO:-no}"
             KODI_AUTOSTART="${KODI_AUTOSTART:-yes}"
@@ -396,10 +397,7 @@ if [ -f "$SETTINGS_FILE" ]; then
                 export INSTALL_APPS
             fi
             
-            # Don't save again - already using saved settings
             SAVE_SETTINGS=false
-            
-            # Skip to container creation
             return 0
         else
             echo -e "${YW}Starting fresh configuration...${CL}"
@@ -435,22 +433,24 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           echo -e "${YW}Audio configuration will be skipped${CL}"
       fi
       
-      # Optional software selection (including Kodi) - with validation loop
+      # Optional software selection - with validation loop
       while true; do
           APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-              "Select applications to install:" 18 68 9 \
-              "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
+              "Select applications to install:" 22 68 11 \
+              "KODI_PPA"    "Kodi Media Center (PPA - v20.x)"    OFF \
               "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
-              "FIREFOX" "Firefox web browser" OFF \
-              "BRAVE" "Brave web browser" OFF \
-              "CHROME" "Google Chrome" OFF \
-              "LIBREOFFICE" "LibreOffice suite" OFF \
-              "VLC" "VLC Media Player" OFF \
-              "GIMP" "GIMP Image Editor" OFF \
-              "STEAM" "Steam gaming platform" OFF \
+              "FIREFOX"     "Firefox web browser"                OFF \
+              "BRAVE"       "Brave web browser"                  OFF \
+              "CHROME"      "Google Chrome"                      OFF \
+              "LIBREOFFICE" "LibreOffice suite"                  OFF \
+              "VLC"         "VLC Media Player"                   OFF \
+              "GIMP"        "GIMP Image Editor"                  OFF \
+              "STEAM"       "Steam gaming platform"              OFF \
+              "MAME"        "MAME arcade emulator"               OFF \
+              "RETROARCH"   "RetroArch multi-system emulator"    OFF \
               3>&1 1>&2 2>&3)
           
-          # Validate Kodi selection (can't install both)
+          # Validate: can't install both Kodi versions
           if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
               whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
               continue
@@ -576,11 +576,9 @@ if [ "$CT_TYPE" == "1" ]; then
     cat <<EOF >> $LXC_CONFIG
 lxc.idmap: u 0 100000 65536
 EOF
-    #TODO internalize code to generate mapping instad of using external python script
     LXC_SUB_CONF=$(python3 -c "$(wget -qLO - https://raw.githubusercontent.com/ddimick/proxmox-lxc-idmapper/master/run.py)" \
       ${VIDEO_GID}=$(getent group video | cut -d: -f3) ${RENDER_GID}=$(getent group render | cut -d: -f3) ${TTY_GID}=$(getent group tty | cut -d: -f3) ${INPUT_GID}=$(getent group input | cut -d: -f3) ${AUDIO_GID}=$(getent group audio | cut -d: -f3)) 
     echo "$LXC_SUB_CONF" | grep 'lxc.idmap: g ' >> $LXC_CONFIG
-    # on host add rights to map gids but only if they are not already in the file
     echo "$LXC_SUB_CONF" | sed -n '/subgid/,// { /subgid/! p }' | while read line; do cat /etc/subgid | sed 's/[[:blank:]]*//g' | grep -qxF "$line" || echo $line >> /etc/subgid; done
     /usr/bin/systemctl restart lxc
 else
