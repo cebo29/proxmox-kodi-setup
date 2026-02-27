@@ -19,7 +19,6 @@ INSTALL_VLC="${INSTALL_VLC:-n}"
 INSTALL_GIMP="${INSTALL_GIMP:-n}"
 INSTALL_STEAM="${INSTALL_STEAM:-n}"
 INSTALL_MAME="${INSTALL_MAME:-n}"
-INSTALL_MAME_ADDON="${INSTALL_MAME_ADDON:-n}"
 INSTALL_RETROARCH="${INSTALL_RETROARCH:-n}"
 
 function msg_info() {
@@ -31,6 +30,8 @@ function msg_ok() {
     local msg="$1"
     echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
 }
+
+FAILED_APPS=()   # tracks any app that fails to install
 
 function msg_error() {
     local msg="$1"
@@ -100,9 +101,8 @@ if [ -n "$INSTALL_APPS" ]; then
     [[ "$INSTALL_APPS" == *"VLC"* ]] && INSTALL_VLC="y" || INSTALL_VLC="n"
     [[ "$INSTALL_APPS" == *"GIMP"* ]] && INSTALL_GIMP="y" || INSTALL_GIMP="n"
     [[ "$INSTALL_APPS" == *"STEAM"* ]] && INSTALL_STEAM="y" || INSTALL_STEAM="n"
-    # Use quoted token match so "MAME_ADDON" doesn't trigger standalone MAME
+    # Use quoted token match so standalone MAME token is unambiguous
     [[ "$INSTALL_APPS" == *'"MAME"'* ]] && INSTALL_MAME="y" || INSTALL_MAME="n"
-    [[ "$INSTALL_APPS" == *"MAME_ADDON"* ]] && INSTALL_MAME_ADDON="y" || INSTALL_MAME_ADDON="n"
     [[ "$INSTALL_APPS" == *"RETROARCH"* ]] && INSTALL_RETROARCH="y" || INSTALL_RETROARCH="n"
 else
     # Fallback to interactive prompts if INSTALL_APPS not set
@@ -162,12 +162,8 @@ else
     read -p "Install Steam? (y/n): " -n 1 -r INSTALL_STEAM
     echo
 
-    # MAME
-    read -p "Install MAME standalone? (y/n): " -n 1 -r INSTALL_MAME
-    echo
-
-    # MAME Kodi addon (can be installed alongside standalone)
-    read -p "Install MAME as Kodi addon? (y/n): " -n 1 -r INSTALL_MAME_ADDON
+    # MAME + AML Launcher
+    read -p "Install MAME + AML Launcher (play ROMs in Kodi)? (y/n): " -n 1 -r INSTALL_MAME
     echo
 
     # RetroArch
@@ -693,7 +689,7 @@ if [[ $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     if command -v firefox &> /dev/null; then
         msg_ok "Installed Firefox"
     else
-        msg_error "Firefox installation failed"
+        msg_error "Firefox installation failed"; FAILED_APPS+=("Firefox")
     fi
 fi
 
@@ -707,7 +703,7 @@ if [[ $INSTALL_BRAVE =~ ^[Yy]$ ]]; then
     if command -v brave-browser &> /dev/null; then
         msg_ok "Installed Brave Browser"
     else
-        msg_error "Brave Browser installation failed"
+        msg_error "Brave Browser installation failed"; FAILED_APPS+=("Brave Browser")
     fi
 fi
 
@@ -719,7 +715,7 @@ if [[ $INSTALL_CHROME =~ ^[Yy]$ ]]; then
     if command -v google-chrome &> /dev/null; then
         msg_ok "Installed Google Chrome"
     else
-        msg_error "Google Chrome installation failed"
+        msg_error "Google Chrome installation failed"; FAILED_APPS+=("Google Chrome")
     fi
 fi
 
@@ -729,7 +725,7 @@ if [[ $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]]; then
     if command -v libreoffice &> /dev/null; then
         msg_ok "Installed LibreOffice"
     else
-        msg_error "LibreOffice installation failed"
+        msg_error "LibreOffice installation failed"; FAILED_APPS+=("LibreOffice")
     fi
 fi
 
@@ -739,7 +735,7 @@ if [[ $INSTALL_VLC =~ ^[Yy]$ ]]; then
     if command -v vlc &> /dev/null; then
         msg_ok "Installed VLC Media Player"
     else
-        msg_error "VLC Media Player installation failed"
+        msg_error "VLC Media Player installation failed"; FAILED_APPS+=("VLC")
     fi
 fi
 
@@ -749,7 +745,7 @@ if [[ $INSTALL_GIMP =~ ^[Yy]$ ]]; then
     if command -v gimp &> /dev/null; then
         msg_ok "Installed GIMP"
     else
-        msg_error "GIMP installation failed"
+        msg_error "GIMP installation failed"; FAILED_APPS+=("GIMP")
     fi
 fi
 
@@ -762,7 +758,7 @@ if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
     if command -v steam &> /dev/null || [ -f /usr/games/steam ]; then
         msg_ok "Installed Steam"
     else
-        msg_error "Steam installation failed"
+        msg_error "Steam installation failed"; FAILED_APPS+=("Steam")
     fi
 
     # Set up Steam auto-start if enabled (default to yes)
@@ -782,91 +778,90 @@ EOF
     fi
 fi
 
-# ── MAME ──────────────────────────────────────────────────────────────────────
+# ── MAME + AML Launcher ───────────────────────────────────────────────────────
+# Installs:  1) mame (standalone binary from Ubuntu universe)
+#            2) plugin.program.AML (Advanced MAME Launcher Kodi addon)
+#            3) Pre-configured settings.xml and mame.ini pointing to ~/ROMs/mame
+# The user only needs to run "Setup plugin → All in one step" inside AML once to
+# build the game database (this runs the mame binary so it must be done in Kodi).
 if [[ $INSTALL_MAME =~ ^[Yy]$ ]]; then
     msg_info "Installing MAME"
     # mame is in the universe repo on Ubuntu 22.04. software-properties-common
     # provides add-apt-repository. mame-doc is only Suggests (not Depends) so
     # no broken-package issues on Jammy.
-    apt-get install -y software-properties-common &>/dev/null
+    apt-get install -y software-properties-common unzip wget &>/dev/null
     add-apt-repository -y universe &>/dev/null
     apt-get update &>/dev/null
     apt-get install -y mame &>/dev/null
-    if command -v mame &> /dev/null; then
-        msg_ok "Installed MAME"
-        # Create a ROM directory for the kodi user
-        mkdir -p /home/kodi/ROMs/mame
-        chown -R kodi:kodi /home/kodi/ROMs
-        # Desktop shortcut to launch MAME
-        cat > /home/kodi/Desktop/MAME.desktop <<'MAMEEOF'
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=MAME
-Comment=Multiple Arcade Machine Emulator
-Exec=mame
-Icon=mame
-Terminal=false
-Categories=Game;Emulator;
-MAMEEOF
-        chmod +x /home/kodi/Desktop/MAME.desktop
-        chown kodi:kodi /home/kodi/Desktop/MAME.desktop
-        sudo -u kodi gio set /home/kodi/Desktop/MAME.desktop metadata::trusted true 2>/dev/null || true
-    else
-        msg_error "MAME installation failed"
-    fi
-fi
 
-# ── MAME as Kodi addon ────────────────────────────────────────────────────────
-if [[ $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
-    msg_info "Installing MAME Kodi addon"
-    apt-get install -y unzip wget &>/dev/null
-
-    # Step 1: Install the game.libretro wrapper via apt.
-    # The official Kodi mirror has NO Linux x86_64 binaries for game.libretro;
-    # Ubuntu ships it as a proper .deb in their own repos.
-    apt-get install -y kodi-game-libretro &>/dev/null
-
-    ADDON_DIR="/home/kodi/.kodi/addons"
-    mkdir -p "$ADDON_DIR"
-
-    # Step 2: Download the MAME core from the zach-morris libretro buildbot repo.
-    # This is the only source of Linux x86_64 MAME cores packaged for Kodi.
-    # The addons.xml index lists <path>linux/ADDON-VERSION.zip</path> for each addon.
-    # We use mame2003_plus which has the widest ROM compatibility and is confirmed working.
-    BUILDBOT_RAW="https://github.com/zach-morris/kodi_libretro_buildbot_game_addons/raw/main"
-    CORE_ID="game.libretro.mame2003_plus_libretro_buildbot"
-
-    msg_info "Resolving MAME core version from buildbot index..."
-    ADDONS_XML=$(wget -qO- "${BUILDBOT_RAW}/addons.xml" 2>/dev/null)
-
-    if [ -z "$ADDONS_XML" ]; then
-        msg_error "MAME Kodi addon installation failed (could not reach GitHub)"
-    else
-        # Extract path directly by pattern-matching the zip filename - no line-context needed
-        CORE_PATH=$(echo "$ADDONS_XML" | \
-            grep -oP "linux/game\.libretro\.mame2003_plus_libretro_buildbot[^<\"]+\.zip" | head -1)
-
-        if [ -z "$CORE_PATH" ]; then
-            msg_error "MAME Kodi addon installation failed (core not found in index)"
+    # Ubuntu installs the mame binary to /usr/games/mame, which is NOT in root's
+    # PATH inside an LXC. Use dpkg to verify the package actually installed, and
+    # resolve the binary path explicitly rather than relying on command -v.
+    MAME_OK=false
+    MAME_BIN=""
+    if dpkg -l mame 2>/dev/null | grep -q '^ii'; then
+        # Find the real binary location - could be /usr/games/mame or /usr/bin/mame
+        MAME_BIN=$(dpkg -L mame 2>/dev/null | grep -E '^\/usr\/.*/mame$' | head -1)
+        if [ -x "${MAME_BIN}" ]; then
+            msg_ok "Installed MAME (${MAME_BIN})"
+            MAME_OK=true
         else
-            CORE_URL="${BUILDBOT_RAW}/${CORE_PATH}"
-            CORE_ZIP="/tmp/$(basename "$CORE_PATH")"
-            msg_info "Downloading $(basename "$CORE_PATH")..."
-            wget -qO "$CORE_ZIP" "$CORE_URL" 2>/dev/null
-
-            if unzip -qo "$CORE_ZIP" -d "$ADDON_DIR" 2>/dev/null; then
-                rm -f "$CORE_ZIP"
-                mkdir -p /home/kodi/ROMs/mame
-                chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
-                msg_ok "Installed MAME Kodi addon (mame2003_plus - MAME 2003-Plus)"
-                echo -e "   ${GN}→ In Kodi: Add Games source → ~/ROMs/mame → browse with RetroPlayer${CL}"
-            else
-                rm -f "$CORE_ZIP"
-                msg_error "MAME Kodi addon installation failed (unzip error)"
-            fi
+            msg_error "MAME installation failed (binary not found after install)"; FAILED_APPS+=("MAME")
         fi
+    else
+        msg_error "MAME installation failed (package not installed)"; FAILED_APPS+=("MAME")
     fi
+
+    # ── Advanced MAME Launcher (AML) Kodi addon ───────────────────────────────
+    # Only install AML if MAME itself succeeded. AML is a pure-Python addon
+    # available in the official Kodi Nexus repo. We download the zip, extract
+    # it to ~/.kodi/addons/, and pre-write settings.xml so AML already knows
+    # the MAME executable and ROM path on first launch.
+    if [ "$MAME_OK" = true ]; then
+    AML_ID="plugin.program.AML"
+    AML_VERSION="1.0.2"
+    AML_ZIP="${AML_ID}-${AML_VERSION}.zip"
+    AML_URL="https://mirrors.kodi.tv/addons/nexus/${AML_ID}/${AML_ZIP}"
+    AML_DATA_DIR="/home/kodi/.kodi/userdata/addon_data/${AML_ID}"
+    ROM_DIR="/home/kodi/ROMs/mame"
+    # MAME_BIN was already resolved via dpkg -L above
+
+    msg_info "Installing Advanced MAME Launcher (AML) Kodi addon"
+    mkdir -p "$AML_DIR" "$AML_DATA_DIR" "$ROM_DIR"
+
+    AML_TMP="/tmp/${AML_ZIP}"
+    wget -qO "$AML_TMP" "$AML_URL" 2>/dev/null
+    if unzip -qo "$AML_TMP" -d "/home/kodi/.kodi/addons/" 2>/dev/null; then
+        rm -f "$AML_TMP"
+        # Pre-configure AML with the MAME executable path and ROM directory
+        cat > "${AML_DATA_DIR}/settings.xml" << AMLSETTINGS
+<settings version="2">
+    <setting id="mame_prog">${MAME_BIN}</setting>
+    <setting id="rom_path">${ROM_DIR}</setting>
+    <setting id="assets_path"></setting>
+    <setting id="chd_path"></setting>
+    <setting id="dats_path"></setting>
+    <setting id="samples_path"></setting>
+    <setting id="SL_rom_path"></setting>
+    <setting id="SL_chd_path"></setting>
+</settings>
+AMLSETTINGS
+        # Configure standalone MAME to also use the same ROM path
+        mkdir -p /home/kodi/.mame
+        cat > /home/kodi/.mame/mame.ini << MAMEINI
+# MAME configuration - managed by kodi-lxc setup
+rompath             ${ROM_DIR}
+MAMEINI
+        chown -R kodi:kodi /home/kodi/.kodi /home/kodi/.mame /home/kodi/ROMs
+        msg_ok "Installed AML Kodi addon (pre-configured: ${MAME_BIN} → ${ROM_DIR})"
+        echo -e "   ${GN}→ In Kodi: Add-ons → Programs → Advanced MAME Launcher${CL}"
+        echo -e "   ${GN}→ Open AML → press C → Setup plugin → All in one step${CL}"
+        echo -e "   ${GN}→ Put ROMs in: ${ROM_DIR}${CL}"
+    else
+        rm -f "$AML_TMP"
+        msg_error "AML Kodi addon installation failed (download/unzip error)"; FAILED_APPS+=("AML Kodi addon")
+    fi
+    fi # end: MAME installed OK
 fi
 
 # ── RetroArch ─────────────────────────────────────────────────────────────────
@@ -898,7 +893,7 @@ RAEOF
         chown kodi:kodi /home/kodi/Desktop/RetroArch.desktop
         sudo -u kodi gio set /home/kodi/Desktop/RetroArch.desktop metadata::trusted true 2>/dev/null || true
     else
-        msg_error "RetroArch installation failed"
+        msg_error "RetroArch installation failed"; FAILED_APPS+=("RetroArch")
     fi
 fi
 
@@ -1318,22 +1313,75 @@ EOF
     chown kodi:kodi /home/kodi/Desktop/install-steam.desktop
 fi
 
-# ── MAME desktop installer (if skipped) ───────────────────────────────────────
+# ── MAME + AML desktop installer (if skipped) ────────────────────────────────
 if [[ ! $INSTALL_MAME =~ ^[Yy]$ ]]; then
     cat <<'MAMEINSTEOF' >/usr/local/bin/install-mame.sh
 #!/usr/bin/env bash
-echo "Installing MAME..."
-# mame is in universe on Ubuntu 22.04. mame-doc is only Suggests, not Depends.
-apt-get install -y software-properties-common &>/dev/null
+set -e
+echo "Installing MAME + Advanced MAME Launcher (AML) for Kodi..."
+echo ""
+
+# Step 1: Install MAME from Ubuntu universe
+echo "Installing MAME standalone..."
+apt-get install -y software-properties-common unzip wget &>/dev/null
 add-apt-repository -y universe &>/dev/null
 apt-get update &>/dev/null
 apt-get install -y mame &>/dev/null
-if command -v mame &> /dev/null; then
-    echo "MAME installation complete!"
-    mkdir -p /home/kodi/ROMs/mame
-    chown -R kodi:kodi /home/kodi/ROMs
-    # Create desktop shortcut
-    cat > /home/kodi/Desktop/MAME.desktop <<'MAMEDESKTOP'
+# /usr/games is not in root PATH in LXC - use dpkg to verify install and find binary
+if ! dpkg -l mame 2>/dev/null | grep -q '^ii'; then
+    echo "ERROR: MAME installation failed. Check your internet connection."
+    read -p "Press Enter to exit..."; exit 1
+fi
+MAME_BIN=$(dpkg -L mame 2>/dev/null | grep -E '^\/usr\/.*/mame$' | head -1)
+if [ ! -x "${MAME_BIN}" ]; then
+    echo "ERROR: MAME binary not found after install (expected in /usr/games/mame)."
+    read -p "Press Enter to exit..."; exit 1
+fi
+echo "  ✓ MAME installed (${MAME_BIN})"
+
+# Step 2: Install AML Kodi addon from official Kodi Nexus repo
+AML_ID="plugin.program.AML"
+AML_VERSION="1.0.2"
+AML_ZIP="${AML_ID}-${AML_VERSION}.zip"
+AML_URL="https://mirrors.kodi.tv/addons/nexus/${AML_ID}/${AML_ZIP}"
+AML_TMP="/tmp/${AML_ZIP}"
+ADDON_BASE="/home/kodi/.kodi/addons"
+AML_DATA="/home/kodi/.kodi/userdata/addon_data/${AML_ID}"
+ROM_DIR="/home/kodi/ROMs/mame"
+
+echo "Downloading AML Kodi addon..."
+mkdir -p "$ADDON_BASE" "$AML_DATA" "$ROM_DIR"
+wget -qO "$AML_TMP" "$AML_URL" 2>/dev/null
+if ! unzip -qo "$AML_TMP" -d "$ADDON_BASE" 2>/dev/null; then
+    echo "ERROR: Could not download or extract AML. Check internet connection."
+    rm -f "$AML_TMP"
+    read -p "Press Enter to exit..."; exit 1
+fi
+rm -f "$AML_TMP"
+echo "  ✓ AML addon installed"
+
+# Step 3: Pre-configure AML with MAME path and ROM directory
+cat > "${AML_DATA}/settings.xml" << AMLSETTINGS
+<settings version="2">
+    <setting id="mame_prog">${MAME_BIN}</setting>
+    <setting id="rom_path">${ROM_DIR}</setting>
+    <setting id="assets_path"></setting>
+    <setting id="chd_path"></setting>
+    <setting id="dats_path"></setting>
+    <setting id="samples_path"></setting>
+    <setting id="SL_rom_path"></setting>
+    <setting id="SL_chd_path"></setting>
+</settings>
+AMLSETTINGS
+
+# Configure standalone MAME to use the same ROM directory
+mkdir -p /home/kodi/.mame
+cat > /home/kodi/.mame/mame.ini << MAMEINI
+rompath             ${ROM_DIR}
+MAMEINI
+
+# Create MAME desktop shortcut and set permissions
+cat > /home/kodi/Desktop/MAME.desktop << 'MAMEDESKTOP'
 [Desktop Entry]
 Version=1.0
 Type=Application
@@ -1344,16 +1392,22 @@ Icon=mame
 Terminal=false
 Categories=Game;Emulator;
 MAMEDESKTOP
-    chmod +x /home/kodi/Desktop/MAME.desktop
-    chown kodi:kodi /home/kodi/Desktop/MAME.desktop
-    echo "ROMs directory created at ~/ROMs/mame"
-else
-    echo "MAME installation failed!"
-fi
-echo "The desktop installer will now be deleted."
-read -p "Press Enter to exit..."
+chmod +x /home/kodi/Desktop/MAME.desktop
+chown -R kodi:kodi /home/kodi/.kodi /home/kodi/.mame /home/kodi/ROMs /home/kodi/Desktop/MAME.desktop
+echo "  ✓ Paths configured"
+
+echo ""
+echo "Installation complete!"
+echo ""
+echo "Next steps:"
+echo "  1. Put MAME ROMs (.zip) in: ${ROM_DIR}"
+echo "  2. Open Kodi → Add-ons → Programs → Advanced MAME Launcher"
+echo "  3. Press C on any item → Setup plugin → All in one step"
+echo "     (This builds the game database - takes 5-20 mins)"
+echo ""
 rm -f /home/kodi/Desktop/install-mame.desktop
 rm -f "$0"
+read -p "Press Enter to exit..."
 MAMEINSTEOF
     chmod +x /usr/local/bin/install-mame.sh
 
@@ -1361,98 +1415,17 @@ MAMEINSTEOF
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Install MAME
-Comment=Install MAME arcade emulator
+Name=Install MAME + AML
+Comment=Install MAME arcade emulator and AML Kodi launcher
 Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-mame.sh"
 Terminal=false
-Icon=mame
+Icon=kodi
 Categories=System;
 EOF
     chmod +x /home/kodi/Desktop/install-mame.desktop
     chown kodi:kodi /home/kodi/Desktop/install-mame.desktop
 fi
 
-# ── MAME Kodi addon desktop installer (if skipped) ────────────────────────────
-if [[ ! $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
-    cat <<'MAMEADDONINSTEOF' >/usr/local/bin/install-mame-addon.sh
-#!/usr/bin/env bash
-echo "Installing MAME as a Kodi addon..."
-echo ""
-apt-get install -y unzip wget &>/dev/null
-
-# Step 1: Install the game.libretro wrapper via apt (Ubuntu ships it as a .deb)
-echo "Installing game.libretro wrapper..."
-apt-get install -y kodi-game-libretro &>/dev/null
-
-# Step 2: Download the MAME 2003-Plus core from the zach-morris libretro buildbot repo.
-# The official Kodi mirror has NO Linux x86_64 MAME builds - this is the correct source.
-BUILDBOT_RAW="https://github.com/zach-morris/kodi_libretro_buildbot_game_addons/raw/main"
-CORE_ID="game.libretro.mame2003_plus_libretro_buildbot"
-ADDON_DIR="/home/kodi/.kodi/addons"
-mkdir -p "$ADDON_DIR"
-
-echo "Fetching buildbot addon index..."
-ADDONS_XML=$(wget -qO- "${BUILDBOT_RAW}/addons.xml" 2>/dev/null)
-
-if [ -z "$ADDONS_XML" ]; then
-    echo ""
-    echo "Installation failed: could not reach GitHub. Check internet and try again."
-    read -p "Press Enter to exit..."
-    exit 1
-fi
-
-CORE_PATH=$(echo "$ADDONS_XML" | \
-    grep -oP "linux/game\.libretro\.mame2003_plus_libretro_buildbot[^<\"]+\.zip" | head -1)
-
-if [ -z "$CORE_PATH" ]; then
-    echo ""
-    echo "Installation failed: core not found in addon index."
-    read -p "Press Enter to exit..."
-    exit 1
-fi
-
-CORE_URL="${BUILDBOT_RAW}/${CORE_PATH}"
-CORE_ZIP="/tmp/$(basename "$CORE_PATH")"
-echo "Downloading $(basename "$CORE_PATH")..."
-wget -qO "$CORE_ZIP" "$CORE_URL" 2>/dev/null
-
-if unzip -qo "$CORE_ZIP" -d "$ADDON_DIR" 2>/dev/null; then
-    rm -f "$CORE_ZIP"
-    mkdir -p /home/kodi/ROMs/mame
-    chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
-    echo ""
-    echo "MAME Kodi addon installed successfully! (MAME 2003-Plus)"
-    echo "Next steps:"
-    echo "  1. Open Kodi"
-    echo "  2. Go to Games -> Add Games source -> ~/ROMs/mame"
-    echo "  3. Long-press a ROM and choose Play to launch with MAME"
-    echo ""
-    echo "The desktop installer will now be deleted."
-    rm -f /home/kodi/Desktop/install-mame-addon.desktop
-    rm -f "$0"
-else
-    rm -f "$CORE_ZIP"
-    echo ""
-    echo "Installation failed (unzip error). Check your internet connection and try again."
-fi
-read -p "Press Enter to exit..."
-MAMEADDONINSTEOF
-    chmod +x /usr/local/bin/install-mame-addon.sh
-
-    cat <<EOF >/home/kodi/Desktop/install-mame-addon.desktop
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=Install MAME Kodi Addon
-Comment=Install MAME as a Kodi addon (runs inside Kodi)
-Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-mame-addon.sh"
-Terminal=false
-Icon=kodi
-Categories=System;
-EOF
-    chmod +x /home/kodi/Desktop/install-mame-addon.desktop
-    chown kodi:kodi /home/kodi/Desktop/install-mame-addon.desktop
-fi
 
 # ── RetroArch desktop installer (if skipped) ──────────────────────────────────
 if [[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]]; then
@@ -1510,7 +1483,14 @@ EOF
 fi
 
 
-msg_info "Restarting lightdm"
+# Write any app failures to a file so kodi-v1.sh can report them accurately
+if [ ${#FAILED_APPS[@]} -gt 0 ]; then
+    printf '%s\n' "${FAILED_APPS[@]}" > /tmp/kodi-install-failures.txt
+else
+    rm -f /tmp/kodi-install-failures.txt
+fi
+
+
 systemctl restart lightdm
 msg_ok "Restarted lightdm"
 
@@ -1544,7 +1524,6 @@ SKIPPED=0
 [[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_MAME =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_MAME_ADDON =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]] && ((SKIPPED++))
 
 if [ $SKIPPED -gt 0 ]; then
