@@ -18,6 +18,8 @@ INSTALL_LIBREOFFICE="${INSTALL_LIBREOFFICE:-n}"
 INSTALL_VLC="${INSTALL_VLC:-n}"
 INSTALL_GIMP="${INSTALL_GIMP:-n}"
 INSTALL_STEAM="${INSTALL_STEAM:-n}"
+INSTALL_RETROARCH="${INSTALL_RETROARCH:-n}"
+RETROARCH_AUTOSTART="${RETROARCH_AUTOSTART:-no}"
 
 function msg_info() {
     local msg="$1"
@@ -97,6 +99,7 @@ if [ -n "$INSTALL_APPS" ]; then
     [[ "$INSTALL_APPS" == *"VLC"* ]] && INSTALL_VLC="y" || INSTALL_VLC="n"
     [[ "$INSTALL_APPS" == *"GIMP"* ]] && INSTALL_GIMP="y" || INSTALL_GIMP="n"
     [[ "$INSTALL_APPS" == *"STEAM"* ]] && INSTALL_STEAM="y" || INSTALL_STEAM="n"
+    [[ "$INSTALL_APPS" == *"RETROARCH"* ]] && INSTALL_RETROARCH="y" || INSTALL_RETROARCH="n"
 else
     # Fallback to interactive prompts if INSTALL_APPS not set
     echo -e "\n${GN}=== Optional Software Installation ===${CL}"
@@ -125,6 +128,15 @@ else
             KODI_EXEC="flatpak run tv.kodi.Kodi"
             msg_ok "Installed Kodi via Flatpak (version 21.x)"
         fi
+    fi
+
+    # RetroArch
+    read -p "Install RetroArch? (y/n): " -n 1 -r INSTALL_RETROARCH
+    echo
+    if [[ $INSTALL_RETROARCH =~ ^[Yy]$ ]]; then
+        read -p "Autostart RetroArch on boot? (y/n): " -n 1 -r RA_AUTO
+        echo
+        [[ $RA_AUTO =~ ^[Yy]$ ]] && RETROARCH_AUTOSTART="yes" || RETROARCH_AUTOSTART="no"
     fi
     
     # Firefox
@@ -173,7 +185,6 @@ msg_ok "Configured lightdm for XFCE"
 
 msg_info "Setting up device detection for xorg"
 apt-get install -y xserver-xorg-input-evdev &>/dev/null
-# Following script needs to be executed before Xorg starts to enumerate all input devices
 mkdir -p /etc/X11/xorg.conf.d
 cat >/usr/local/bin/preX-populate-input.sh << '__EOF__'
 #!/usr/bin/env bash
@@ -213,7 +224,6 @@ msg_ok "Set up device detection for xorg"
 
 msg_info "Setting up Kodi autostart in XFCE"
 if [ -n "$KODI_EXEC" ]; then
-    # Check if autostart is enabled (default to yes)
     if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
         mkdir -p /home/kodi/.config/autostart
         cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
@@ -238,30 +248,20 @@ if [ -n "$KODI_EXEC" ] && [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
     
     cat > /usr/local/bin/kodi-exit-monitor.sh <<'KODIMONSCRIPT'
 #!/bin/bash
-# Monitor for Kodi process and restart panel when it exits
-
 while true; do
-    # Wait for Kodi to be running (check both native and flatpak)
     while ! pgrep -x "kodi.bin" > /dev/null 2>&1 && ! pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
         sleep 2
     done
-    
-    # Kodi is running, wait for it to exit
     while pgrep -x "kodi.bin" > /dev/null 2>&1 || pgrep -f "tv.kodi.Kodi" > /dev/null 2>&1; do
         sleep 2
     done
-    
-    # Kodi just exited, restart the panel with correct environment
     sleep 1
     su - kodi -c "DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 killall xfce4-panel; DISPLAY=:0 XDG_RUNTIME_DIR=/run/user/1000 xfce4-panel &"
-    
-    # Wait a bit before monitoring again
     sleep 5
 done
 KODIMONSCRIPT
     chmod +x /usr/local/bin/kodi-exit-monitor.sh
     
-    # Create systemd service for the monitor
     cat > /etc/systemd/system/kodi-exit-monitor.service <<'KODIMONSERVICE'
 [Unit]
 Description=Monitor Kodi exit and restart XFCE panel
@@ -282,8 +282,6 @@ KODIMONSERVICE
     
     msg_ok "Set up Kodi exit monitor service"
 fi
-
-
 
 msg_info "Setting up PolicyKit permissions"
 mkdir -p /etc/polkit-1/localauthority/50-local.d
@@ -358,7 +356,6 @@ msg_ok "Created desktop shortcuts (Volume, Shutdown, Reboot)"
 
 # Check if user wants to configure audio now (from environment variable or prompt)
 if [ -z "$CONFIGURE_AUDIO" ]; then
-    # Fallback prompt if variable not set (standalone script execution)
     echo -e "\n${GN}=== Audio Device Configuration ===${CL}"
     echo -e "${YW}Would you like to configure audio device now?${CL}"
     echo -e "You can skip this and configure it later from the desktop shortcut."
@@ -367,16 +364,13 @@ if [ -z "$CONFIGURE_AUDIO" ]; then
     echo ""
     CONFIGURE_AUDIO_NOW=$(echo "$CONFIGURE_AUDIO_NOW" | tr '[:upper:]' '[:lower:]')
 else
-    # Use the environment variable from kodi-v1.sh
     CONFIGURE_AUDIO_NOW="$CONFIGURE_AUDIO"
 fi
 
 if [[ $CONFIGURE_AUDIO_NOW =~ ^y ]]; then
-    # Detect audio devices
     echo -e "\n${GN}=== Audio Device Detection ===${CL}"
     echo -e "Detecting available audio playback devices...\n"
 
-# Get list of playback devices
 mapfile -t DEVICES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card \([0-9]\+\):.*device \([0-9]\+\):.*/\1,\2/')
 mapfile -t DEVICE_NAMES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card [0-9]\+: \(.*\), device [0-9]\+: \(.*\)/\1 - \2/')
 
@@ -393,14 +387,12 @@ else
         echo -e "  ${GN}$((i+1)).${CL} hw:${CARD},${DEV} - ${DEVICE_NAMES[$i]}"
     done
     
-    # If only one device, use it automatically
     if [ ${#DEVICES[@]} -eq 1 ]; then
         SELECTED_INDEX=0
         IFS=',' read -r SELECTED_CARD SELECTED_DEV <<< "${DEVICES[0]}"
         echo -e "\n${GN}Only one device found, automatically selecting:${CL}"
         echo -e "  hw:${SELECTED_CARD},${SELECTED_DEV} - ${DEVICE_NAMES[0]}"
     else
-        # Let user choose
         while true; do
             echo -e "\n${YW}Select audio device for output (enter number):${CL}"
             read -p "Choice [1-${#DEVICES[@]}]: " CHOICE
@@ -417,7 +409,6 @@ else
         echo -e "\n${GN}Selected:${CL} hw:${SELECTED_CARD},${SELECTED_DEV} - ${DEVICE_NAMES[$SELECTED_INDEX]}"
     fi
     
-    # Test audio
     echo -e "\n${YW}Testing audio device...${CL}"
     if [ -f /usr/share/sounds/alsa/Front_Center.wav ]; then
         echo -e "Playing test sound. You should hear audio now..."
@@ -433,7 +424,6 @@ else
             echo
             
             if [[ $TRY_AGAIN =~ ^[Yy]$ ]]; then
-                # Allow retry with different device
                 while true; do
                     echo -e "\n${GN}Available devices:${CL}\n"
                     for i in "${!DEVICES[@]}"; do
@@ -478,25 +468,20 @@ else
     fi
 fi
 
-# Configure PulseAudio for kodi user
 if [ "$SKIP_AUDIO" = false ]; then
     msg_info "Configuring PulseAudio for selected device"
     mkdir -p /home/kodi/.config/pulse
     cat > /home/kodi/.config/pulse/default.pa <<PAEOF
 #!/usr/bin/pulseaudio -nF
 
-# Include the default PulseAudio config
 .include /etc/pulse/default.pa
 
-# Explicitly load ALSA sink with selected device
 load-module module-alsa-sink device=hw:${SELECTED_CARD},${SELECTED_DEV} sink_name=selected_output
 set-default-sink selected_output
 
-# Don't auto-suspend when idle
 unload-module module-suspend-on-idle
 PAEOF
     
-    # Also configure ALSA default
     cat > /etc/asound.conf <<ALSAEOF
 defaults.pcm.card ${SELECTED_CARD}
 defaults.pcm.device ${SELECTED_DEV}
@@ -510,30 +495,24 @@ else
     cat > /home/kodi/.config/pulse/default.pa <<'PAEOF'
 #!/usr/bin/pulseaudio -nF
 
-# Include the default PulseAudio config
 .include /etc/pulse/default.pa
 
-# Don't auto-suspend when idle
 unload-module module-suspend-on-idle
 PAEOF
     msg_ok "Configured PulseAudio with auto-detection"
 fi
 
 else
-    # User chose to skip audio configuration
     echo -e "${YW}Skipping audio configuration. You can configure it later using the desktop shortcut.${CL}"
     SKIP_AUDIO=true
     
-    # Create basic PulseAudio config
     msg_info "Setting up basic PulseAudio configuration"
     mkdir -p /home/kodi/.config/pulse
     cat > /home/kodi/.config/pulse/default.pa <<'PAEOF'
 #!/usr/bin/pulseaudio -nF
 
-# Include the default PulseAudio config
 .include /etc/pulse/default.pa
 
-# Don't auto-suspend when idle
 unload-module module-suspend-on-idle
 PAEOF
     msg_ok "Basic PulseAudio configured"
@@ -542,23 +521,15 @@ fi
 # Create audio configuration script for desktop shortcut
 msg_info "Creating audio configuration desktop shortcut"
 
-# Install zenity for GUI dialogs
 apt-get install -y zenity &>/dev/null
 
-# Create Desktop folder if it doesn't exist
 mkdir -p /home/kodi/Desktop
 
 cat > /usr/local/bin/configure-audio.sh <<'AUDIOCONF'
 #!/bin/bash
 
-YW="\033[33m"
-GN="\033[1;92m"
-RD="\033[01;31m"
-CL="\033[m"
-
 zenity --info --title="Audio Configuration" --text="This will help you configure your audio device.\n\nClick OK to continue." --width=400
 
-# Detect audio devices
 mapfile -t DEVICES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card \([0-9]\+\):.*device \([0-9]\+\):.*/\1,\2/')
 mapfile -t DEVICE_NAMES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card [0-9]\+: \(.*\), device [0-9]\+: \(.*\)/\1 - \2/')
 
@@ -567,7 +538,6 @@ if [ ${#DEVICES[@]} -eq 0 ]; then
     exit 1
 fi
 
-# Build device list for zenity - using arrays to properly handle spaces
 DEVICE_LIST=()
 for i in "${!DEVICES[@]}"; do
     IFS=',' read -r CARD DEV <<< "${DEVICES[$i]}"
@@ -576,7 +546,6 @@ for i in "${!DEVICES[@]}"; do
     DEVICE_LIST+=("${DEVICE_NAMES[$i]}")
 done
 
-# Select device
 SELECTED=$(zenity --list --radiolist --title="Select Audio Device" \
     --text="Choose your audio output device:" \
     --column="Select" --column="Device" --column="Name" \
@@ -587,39 +556,31 @@ if [ -z "$SELECTED" ]; then
     exit 0
 fi
 
-# Extract card and device numbers
 SELECTED_CARD=$(echo "$SELECTED" | sed 's/hw:\([0-9]\+\),.*/\1/')
 SELECTED_DEV=$(echo "$SELECTED" | sed 's/hw:[0-9]\+,\([0-9]\+\)/\1/')
 
-# Test audio
 zenity --info --title="Testing Audio" --text="Playing test sound on $SELECTED\n\nClick OK to play." --width=400
 aplay -D plughw:${SELECTED_CARD},${SELECTED_DEV} /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null
 
 if zenity --question --title="Audio Test" --text="Did you hear the test sound?" --width=300; then
-    # Configure PulseAudio
     mkdir -p ~/.config/pulse
     cat > ~/.config/pulse/default.pa <<EOF
 #!/usr/bin/pulseaudio -nF
 
-# Include the default PulseAudio config
 .include /etc/pulse/default.pa
 
-# Explicitly load ALSA sink with selected device
 load-module module-alsa-sink device=hw:${SELECTED_CARD},${SELECTED_DEV} sink_name=selected_output
 set-default-sink selected_output
 
-# Don't auto-suspend when idle
 unload-module module-suspend-on-idle
 EOF
     
-    # Configure ALSA default
     sudo bash -c "cat > /etc/asound.conf <<EOF
 defaults.pcm.card ${SELECTED_CARD}
 defaults.pcm.device ${SELECTED_DEV}
 defaults.ctl.card ${SELECTED_CARD}
 EOF"
     
-    # Restart PulseAudio
     pulseaudio -k 2>/dev/null
     sleep 1
     
@@ -632,7 +593,6 @@ fi
 AUDIOCONF
 chmod +x /usr/local/bin/configure-audio.sh
 
-# Create desktop shortcut
 cat > /home/kodi/Desktop/Configure-Audio.desktop <<'DESKCONF'
 [Desktop Entry]
 Version=1.0
@@ -646,8 +606,6 @@ Categories=Settings;HardwareSettings;
 DESKCONF
 chmod +x /home/kodi/Desktop/Configure-Audio.desktop
 chown kodi:kodi /home/kodi/Desktop/Configure-Audio.desktop
-
-# Mark as trusted in XFCE (allow launching)
 sudo -u kodi gio set /home/kodi/Desktop/Configure-Audio.desktop metadata::trusted true 2>/dev/null || true
 
 msg_ok "Created audio configuration shortcut"
@@ -660,22 +618,19 @@ XPEOF
 
 chown -R kodi:kodi /home/kodi/.config /home/kodi/.xprofile /home/kodi/Desktop
 
-# Enable PulseAudio socket activation for kodi user
 sudo -u kodi XDG_RUNTIME_DIR=/run/user/1000 systemctl --user enable pulseaudio.socket pulseaudio.service &>/dev/null
 
 msg_ok "Set up PulseAudio"
 
+# ─────────────────────────────────────────────
 # Install selected applications
+# ─────────────────────────────────────────────
 echo -e "\n${GN}=== Installing Selected Applications ===${CL}\n"
 
 if [[ $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     msg_info "Installing Firefox"
     apt-get install -y firefox &>/dev/null
-    if command -v firefox &> /dev/null; then
-        msg_ok "Installed Firefox"
-    else
-        msg_error "Firefox installation failed"
-    fi
+    command -v firefox &> /dev/null && msg_ok "Installed Firefox" || msg_error "Firefox installation failed"
 fi
 
 if [[ $INSTALL_BRAVE =~ ^[Yy]$ ]]; then
@@ -685,11 +640,7 @@ if [[ $INSTALL_BRAVE =~ ^[Yy]$ ]]; then
     echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list &>/dev/null
     apt-get update &>/dev/null
     apt-get install -y brave-browser &>/dev/null
-    if command -v brave-browser &> /dev/null; then
-        msg_ok "Installed Brave Browser"
-    else
-        msg_error "Brave Browser installation failed"
-    fi
+    command -v brave-browser &> /dev/null && msg_ok "Installed Brave Browser" || msg_error "Brave Browser installation failed"
 fi
 
 if [[ $INSTALL_CHROME =~ ^[Yy]$ ]]; then
@@ -697,41 +648,25 @@ if [[ $INSTALL_CHROME =~ ^[Yy]$ ]]; then
     wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb -O /tmp/chrome.deb &>/dev/null
     apt-get install -y /tmp/chrome.deb &>/dev/null
     rm /tmp/chrome.deb
-    if command -v google-chrome &> /dev/null; then
-        msg_ok "Installed Google Chrome"
-    else
-        msg_error "Google Chrome installation failed"
-    fi
+    command -v google-chrome &> /dev/null && msg_ok "Installed Google Chrome" || msg_error "Google Chrome installation failed"
 fi
 
 if [[ $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]]; then
     msg_info "Installing LibreOffice"
     apt-get install -y libreoffice &>/dev/null
-    if command -v libreoffice &> /dev/null; then
-        msg_ok "Installed LibreOffice"
-    else
-        msg_error "LibreOffice installation failed"
-    fi
+    command -v libreoffice &> /dev/null && msg_ok "Installed LibreOffice" || msg_error "LibreOffice installation failed"
 fi
 
 if [[ $INSTALL_VLC =~ ^[Yy]$ ]]; then
     msg_info "Installing VLC Media Player"
     apt-get install -y vlc &>/dev/null
-    if command -v vlc &> /dev/null; then
-        msg_ok "Installed VLC Media Player"
-    else
-        msg_error "VLC Media Player installation failed"
-    fi
+    command -v vlc &> /dev/null && msg_ok "Installed VLC Media Player" || msg_error "VLC Media Player installation failed"
 fi
 
 if [[ $INSTALL_GIMP =~ ^[Yy]$ ]]; then
     msg_info "Installing GIMP"
     apt-get install -y gimp &>/dev/null
-    if command -v gimp &> /dev/null; then
-        msg_ok "Installed GIMP"
-    else
-        msg_error "GIMP installation failed"
-    fi
+    command -v gimp &> /dev/null && msg_ok "Installed GIMP" || msg_error "GIMP installation failed"
 fi
 
 if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
@@ -746,7 +681,6 @@ if [[ $INSTALL_STEAM =~ ^[Yy]$ ]]; then
         msg_error "Steam installation failed"
     fi
     
-    # Set up Steam auto-start if enabled (default to yes)
     if [ "${STEAM_AUTOSTART:-yes}" = "yes" ]; then
         msg_info "Setting up Steam auto-start"
         cat <<EOF >/home/kodi/.config/autostart/steam.desktop
@@ -763,27 +697,67 @@ EOF
     fi
 fi
 
+# ─────────────────────────────────────────────
+# RetroArch
+# ─────────────────────────────────────────────
+if [[ $INSTALL_RETROARCH =~ ^[Yy]$ ]]; then
+    msg_info "Adding RetroArch PPA"
+    apt-get install -y software-properties-common &>/dev/null
+    add-apt-repository -y ppa:libretro/stable &>/dev/null
+    apt-get update &>/dev/null
+    msg_ok "Added RetroArch PPA"
 
-# Create desktop launchers for skipped applications
-mkdir -p /home/kodi/Desktop
+    msg_info "Installing RetroArch and common cores"
+    # Install RetroArch plus a useful set of cores covering MAME and popular systems
+    apt-get install -y retroarch \
+        libretro-mame \
+        libretro-snes9x \
+        libretro-mupen64plus \
+        libretro-nestopia \
+        libretro-genesis-plus-gx \
+        libretro-fbneo \
+        libretro-beetle-psx \
+        retroarch-assets \
+        &>/dev/null
+    if command -v retroarch &> /dev/null; then
+        msg_ok "Installed RetroArch and cores"
+    else
+        msg_error "RetroArch installation failed"
+    fi
 
-# Kodi installers (PPA and Flatpak) if Kodi wasn't installed
+    # Set up RetroArch autostart if requested
+    if [ "${RETROARCH_AUTOSTART:-no}" = "yes" ]; then
+        msg_info "Setting up RetroArch auto-start"
+        mkdir -p /home/kodi/.config/autostart
+        cat > /home/kodi/.config/autostart/retroarch.desktop <<'RAEOF'
+[Desktop Entry]
+Type=Application
+Name=RetroArch
+Exec=retroarch
+X-XFCE-Autostart-enabled=true
+RAEOF
+        chown kodi:kodi /home/kodi/.config/autostart/retroarch.desktop
+        msg_ok "Set up RetroArch auto-start"
+    else
+        msg_info "RetroArch installed but autostart disabled (launch manually from menu)"
+    fi
+fi
+
+# ─────────────────────────────────────────────
+# Desktop installer shortcuts for skipped apps
+# ─────────────────────────────────────────────
+
 # Always create Kodi installer scripts (allows version switching)
-# Kodi PPA installer
 cat <<'KODIPPAEOF' >/usr/local/bin/install-kodi-ppa.sh
 #!/usr/bin/env bash
 echo "Installing/Switching to Kodi PPA (v20.x)..."
 echo ""
-
-# Check and remove Flatpak version if installed
 if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
     echo "Removing existing Kodi Flatpak installation..."
     flatpak uninstall -y tv.kodi.Kodi &>/dev/null
     echo "Flatpak version removed."
     echo ""
 fi
-
-# Check if PPA version already installed
 if command -v kodi &> /dev/null && dpkg -l | grep -q "^ii  kodi "; then
     echo "Kodi PPA is already installed."
     read -p "Reinstall anyway? (y/n): " -n 1 -r REINSTALL
@@ -794,23 +768,16 @@ if command -v kodi &> /dev/null && dpkg -l | grep -q "^ii  kodi "; then
         exit 0
     fi
 fi
-
 echo "Installing Kodi PPA..."
 apt-get install -y software-properties-common &>/dev/null
 add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
 apt-get update &>/dev/null
 apt-get install -y kodi &>/dev/null
-
 if command -v kodi &> /dev/null; then
     echo ""
     echo "Kodi PPA installation complete!"
-    echo "You can launch Kodi from the applications menu."
+    read -p "Auto-start Kodi on boot? (y/n): " -n 1 -r AUTOSTART
     echo ""
-    
-    # Prompt for autostart
-    read -p "Do you want Kodi to auto-start on boot? (y/n): " -n 1 -r AUTOSTART
-    echo ""
-    
     if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
         mkdir -p /home/kodi/.config/autostart
         cat <<AUTOEOF >/home/kodi/.config/autostart/kodi.desktop
@@ -823,9 +790,8 @@ AUTOEOF
         chown -R kodi:kodi /home/kodi/.config/autostart
         echo "Kodi will now auto-start on boot."
     else
-        # Remove autostart if it exists
         rm -f /home/kodi/.config/autostart/kodi.desktop
-        echo "Kodi will NOT auto-start (launch manually from menu)."
+        echo "Kodi will NOT auto-start."
     fi
 else
     echo "Kodi installation failed!"
@@ -849,13 +815,10 @@ EOF
 chmod +x /home/kodi/Desktop/install-kodi-ppa.desktop
 chown kodi:kodi /home/kodi/Desktop/install-kodi-ppa.desktop
 
-# Kodi Flatpak installer
 cat <<'KODIFLATPAKEOF' >/usr/local/bin/install-kodi-flatpak.sh
 #!/usr/bin/env bash
 echo "Installing/Switching to Kodi Flatpak (v21.x)..."
 echo ""
-
-# Check and remove PPA version if installed
 if command -v kodi &> /dev/null && dpkg -l | grep -q "^ii  kodi "; then
     echo "Removing existing Kodi PPA installation..."
     apt-get remove -y kodi kodi-bin kodi-data &>/dev/null
@@ -863,8 +826,6 @@ if command -v kodi &> /dev/null && dpkg -l | grep -q "^ii  kodi "; then
     echo "PPA version removed."
     echo ""
 fi
-
-# Check if Flatpak version already installed
 if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
     echo "Kodi Flatpak is already installed."
     read -p "Reinstall anyway? (y/n): " -n 1 -r REINSTALL
@@ -875,22 +836,15 @@ if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
         exit 0
     fi
 fi
-
 echo "Installing Kodi Flatpak..."
 apt-get install -y flatpak &>/dev/null
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
 flatpak install -y flathub tv.kodi.Kodi &>/dev/null
-
 if flatpak list | grep -q "tv.kodi.Kodi"; then
     echo ""
     echo "Kodi Flatpak installation complete!"
-    echo "You can launch Kodi from the applications menu."
+    read -p "Auto-start Kodi on boot? (y/n): " -n 1 -r AUTOSTART
     echo ""
-    
-    # Prompt for autostart
-    read -p "Do you want Kodi to auto-start on boot? (y/n): " -n 1 -r AUTOSTART
-    echo ""
-    
     if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
         mkdir -p /home/kodi/.config/autostart
         cat <<AUTOEOF >/home/kodi/.config/autostart/kodi.desktop
@@ -903,9 +857,8 @@ AUTOEOF
         chown -R kodi:kodi /home/kodi/.config/autostart
         echo "Kodi will now auto-start on boot."
     else
-        # Remove autostart if it exists
         rm -f /home/kodi/.config/autostart/kodi.desktop
-        echo "Kodi will NOT auto-start (launch manually from menu)."
+        echo "Kodi will NOT auto-start."
     fi
 else
     echo "Kodi Flatpak installation failed!"
@@ -929,6 +882,68 @@ EOF
 chmod +x /home/kodi/Desktop/install-kodi-flatpak.desktop
 chown kodi:kodi /home/kodi/Desktop/install-kodi-flatpak.desktop
 
+# RetroArch desktop installer (shown only if not installed during setup)
+if [[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]]; then
+    cat <<'RAINSTALLEOF' >/usr/local/bin/install-retroarch.sh
+#!/usr/bin/env bash
+echo "Installing RetroArch and common cores..."
+echo ""
+apt-get install -y software-properties-common &>/dev/null
+add-apt-repository -y ppa:libretro/stable &>/dev/null
+apt-get update &>/dev/null
+apt-get install -y retroarch \
+    libretro-mame \
+    libretro-snes9x \
+    libretro-mupen64plus \
+    libretro-nestopia \
+    libretro-genesis-plus-gx \
+    libretro-fbneo \
+    libretro-beetle-psx \
+    retroarch-assets &>/dev/null
+if command -v retroarch &> /dev/null; then
+    echo ""
+    echo "RetroArch installation complete!"
+    read -p "Auto-start RetroArch on boot? (y/n): " -n 1 -r AUTOSTART
+    echo ""
+    if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
+        mkdir -p /home/kodi/.config/autostart
+        cat > /home/kodi/.config/autostart/retroarch.desktop <<AUTOEOF
+[Desktop Entry]
+Type=Application
+Name=RetroArch
+Exec=retroarch
+X-XFCE-Autostart-enabled=true
+AUTOEOF
+        chown kodi:kodi /home/kodi/.config/autostart/retroarch.desktop
+        echo "RetroArch will auto-start on boot."
+    else
+        echo "RetroArch will NOT auto-start."
+    fi
+else
+    echo "RetroArch installation failed!"
+fi
+echo ""
+echo "The desktop launcher will now be deleted."
+read -p "Press Enter to exit..."
+rm -f /home/kodi/Desktop/install-retroarch.desktop
+rm -f "$0"
+RAINSTALLEOF
+    chmod +x /usr/local/bin/install-retroarch.sh
+
+    cat <<EOF >/home/kodi/Desktop/install-retroarch.desktop
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install RetroArch
+Comment=Install RetroArch emulation frontend with common cores
+Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-retroarch.sh"
+Terminal=false
+Icon=retroarch
+Categories=System;Game;
+EOF
+    chmod +x /home/kodi/Desktop/install-retroarch.desktop
+    chown kodi:kodi /home/kodi/Desktop/install-retroarch.desktop
+fi
 
 if [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]]; then
     cat <<'FIREFOXEOF' >/usr/local/bin/install-firefox.sh
@@ -1121,15 +1136,8 @@ CM="${GN}✓${CL}"
 BFR="\\r\\033[K"
 HOLD="-"
 
-function msg_info() {
-    local msg="$1"
-    echo -ne " ${HOLD} ${YW}${msg}..."
-}
-
-function msg_ok() {
-    local msg="$1"
-    echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
-}
+function msg_info() { local msg="$1"; echo -ne " ${HOLD} ${YW}${msg}..."; }
+function msg_ok() { local msg="$1"; echo -e "${BFR} ${CM} ${GN}${msg}${CL}"; }
 
 msg_info "Enabling 32-bit architecture"
 dpkg --add-architecture i386
@@ -1148,10 +1156,8 @@ apt-get install -y -f &>/dev/null
 msg_ok "Installed dependencies"
 
 echo -e "\n${GN}Steam installation complete!${CL}"
-echo -e "You can launch Steam from the XFCE Applications menu."
 
-# Prompt for autostart
-read -p "Do you want Steam to auto-start on boot? (y/n): " -n 1 -r AUTOSTART
+read -p "Auto-start Steam on boot? (y/n): " -n 1 -r AUTOSTART
 echo ""
 
 if [[ $AUTOSTART =~ ^[Yy]$ ]]; then
@@ -1166,13 +1172,12 @@ STEAMSTARTEOF
     chown kodi:kodi /home/kodi/.config/autostart/steam.desktop
     echo "Steam will now auto-start on boot."
 else
-    echo "Steam will NOT auto-start (launch manually from menu)."
+    echo "Steam will NOT auto-start."
 fi
 
 echo -e "\nThe desktop launcher will now be deleted."
 read -p "Press Enter to exit..."
 
-# Remove desktop launcher and self
 rm -f /home/kodi/Desktop/install-steam.desktop
 rm -f "$0"
 STEAMEOF
@@ -1193,7 +1198,6 @@ EOF
     chown kodi:kodi /home/kodi/Desktop/install-steam.desktop
 fi
 
-
 msg_info "Restarting lightdm"
 systemctl restart lightdm
 msg_ok "Restarted lightdm"
@@ -1202,7 +1206,6 @@ echo -e "\n${GN}Setup complete!${CL}"
 echo -e "Your LXC will now:"
 echo -e "  1. Boot into XFCE desktop"
 
-# Conditional Kodi autostart message
 if [ -n "$KODI_EXEC" ]; then
     if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
         echo -e "  2. Automatically launch Kodi on boot"
@@ -1213,9 +1216,18 @@ else
     echo -e "  2. No Kodi installed (pure XFCE desktop)"
 fi
 
-echo -e "  3. Kodi user has full sudo access"
-echo -e "  4. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Audio"
-echo -e "  5. Shutdown/Reboot works from XFCE menu and desktop shortcuts"
+if [[ $INSTALL_RETROARCH =~ ^[Yy]$ ]]; then
+    if [ "${RETROARCH_AUTOSTART:-no}" = "yes" ]; then
+        echo -e "  3. RetroArch will auto-start on boot"
+    else
+        echo -e "  3. RetroArch installed (launch manually from menu)"
+    fi
+    echo -e "     Cores installed: MAME, FBNeo, SNES9x, Nestopia, Genesis+GX, Mupen64Plus, Beetle PSX"
+fi
+
+echo -e "  • Kodi user has full sudo access"
+echo -e "  • Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Audio"
+echo -e "  • Shutdown/Reboot works from XFCE menu and desktop shortcuts"
 
 if [ "$SKIP_AUDIO" = false ]; then
     echo -e "\n${GN}Audio Configuration:${CL}"
@@ -1226,16 +1238,12 @@ else
     echo -e "\n${YW}Audio Configuration:${CL}"
     echo -e "  Audio not configured during installation"
     echo -e "  Use 'Configure Audio' desktop shortcut to set up audio"
-    echo -e "  Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
 fi
 
-
-# Update the completion message to include app installer count
-# Find and replace the completion section
-
-# Count skipped apps
+# Count skipped apps for desktop installer info
 SKIPPED=0
-((SKIPPED+=2))  # Always count both Kodi installers (always available)
+((SKIPPED+=2))  # Always count both Kodi switcher shortcuts
+[[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
 [[ ! $INSTALL_CHROME =~ ^[Yy]$ ]] && ((SKIPPED++))
@@ -1245,6 +1253,6 @@ SKIPPED=0
 [[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
 
 if [ $SKIPPED -gt 0 ]; then
-    echo -e "  6. ${SKIPPED} app installer(s) available on desktop for later installation"
+    echo -e "  • ${SKIPPED} app installer(s) available on desktop for later installation"
 fi
 echo -e "\n${GN}All done! Enjoy your XFCE desktop.${CL}"
