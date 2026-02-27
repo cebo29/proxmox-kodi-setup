@@ -820,10 +820,10 @@ if [[ $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
     apt-get install -y unzip wget &>/dev/null
 
     # Pick the correct Kodi mirror repo based on which Kodi was installed
-    if [[ "$INSTALL_APPS" == *"KODI_FLATPAK"* ]]; then
+    if [[ "${INSTALL_APPS:-}" == *"KODI_FLATPAK"* ]]; then
         KODI_REPO="omega"   # Flatpak = Kodi 21.x
     else
-        KODI_REPO="nexus"   # PPA = Kodi 20.x
+        KODI_REPO="nexus"   # PPA or undetected = Kodi 20.x
     fi
 
     ADDON_BASE_URL="https://mirrors.kodi.tv/addons/${KODI_REPO}"
@@ -836,10 +836,12 @@ if [[ $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
         local addon_xml version
         addon_xml=$(wget -qO- "${ADDON_BASE_URL}/${addon_id}/addon.xml" 2>/dev/null)
         [ -z "$addon_xml" ] && return 1
-        # Extract version from the addon's own id= attribute line
-        version=$(echo "$addon_xml" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
-        # Fallback: first version= in the file
-        [ -z "$version" ] && version=$(echo "$addon_xml" | grep -oP 'version="\K[^"]+' | head -1)
+        # Merge to single line first so the regex works regardless of line breaks in the xml
+        local oneline
+        oneline=$(echo "$addon_xml" | tr -d '\n')
+        version=$(echo "$oneline" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
+        # Fallback: grab the version attribute from the opening <addon ...> tag only
+        [ -z "$version" ] && version=$(echo "$oneline" | grep -oP '<addon[^>]*version="\K[^"]+')
         [ -z "$version" ] && return 1
         wget -qO "/tmp/${addon_id}.zip" \
             "${ADDON_BASE_URL}/${addon_id}/${addon_id}-${version}.zip" 2>/dev/null || return 1
@@ -1391,8 +1393,10 @@ install_kodi_addon() {
     local addon_xml version
     addon_xml=$(wget -qO- "${ADDON_BASE_URL}/${addon_id}/addon.xml" 2>/dev/null)
     [ -z "$addon_xml" ] && return 1
-    version=$(echo "$addon_xml" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
-    [ -z "$version" ] && version=$(echo "$addon_xml" | grep -oP 'version="\K[^"]+' | head -1)
+    local oneline
+    oneline=$(echo "$addon_xml" | tr -d '\n')
+    version=$(echo "$oneline" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
+    [ -z "$version" ] && version=$(echo "$oneline" | grep -oP '<addon[^>]*version="\K[^"]+')
     [ -z "$version" ] && return 1
     wget -qO "/tmp/${addon_id}.zip" \
         "${ADDON_BASE_URL}/${addon_id}/${addon_id}-${version}.zip" 2>/dev/null || return 1
@@ -1523,18 +1527,6 @@ echo -e "  3. Kodi user has full sudo access"
 echo -e "  4. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Audio"
 echo -e "  5. Shutdown/Reboot works from XFCE menu and desktop shortcuts"
 
-if [ "$SKIP_AUDIO" = false ]; then
-    echo -e "\n${GN}Audio Configuration:${CL}"
-    echo -e "  Device: hw:${SELECTED_CARD},${SELECTED_DEV} - ${DEVICE_NAMES[$SELECTED_INDEX]}"
-    echo -e "  PulseAudio configured with this device as default"
-    echo -e "  Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
-else
-    echo -e "\n${YW}Audio Configuration:${CL}"
-    echo -e "  Audio not configured during installation"
-    echo -e "  Use 'Configure Audio' desktop shortcut to set up audio"
-    echo -e "  Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
-fi
-
 # Count skipped apps
 SKIPPED=0
 ((SKIPPED+=2))  # Always count both Kodi installers (always available)
@@ -1552,4 +1544,17 @@ SKIPPED=0
 if [ $SKIPPED -gt 0 ]; then
     echo -e "  6. ${SKIPPED} app installer(s) available on desktop for later installation"
 fi
+
+if [ "$SKIP_AUDIO" = false ]; then
+    echo -e "\n  7. ${GN}Audio Configuration:${CL}"
+    echo -e "     Device: hw:${SELECTED_CARD},${SELECTED_DEV} - ${DEVICE_NAMES[$SELECTED_INDEX]}"
+    echo -e "     PulseAudio configured with this device as default"
+    echo -e "     Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
+else
+    echo -e "\n  7. ${YW}Audio Configuration:${CL}"
+    echo -e "     Audio not configured during installation"
+    echo -e "     Use 'Configure Audio' desktop shortcut to set up audio"
+    echo -e "     Use 'Volume Control' desktop shortcut (alsamixer) to adjust volume"
+fi
+
 echo -e "\n${GN}All done! Enjoy your XFCE desktop.${CL}"
