@@ -292,7 +292,7 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     # Optional software selection - with validation loop
     while true; do
         APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-            "Select applications to install:" 22 68 11 \
+            "Select applications to install:" 24 68 12 \
             "KODI_PPA"    "Kodi Media Center (PPA - v20.x)"    OFF \
             "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
             "FIREFOX"     "Firefox web browser"                OFF \
@@ -302,7 +302,8 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
             "VLC"         "VLC Media Player"                   OFF \
             "GIMP"        "GIMP Image Editor"                  OFF \
             "STEAM"       "Steam gaming platform"              OFF \
-            "MAME"        "MAME arcade emulator"               OFF \
+            "MAME"        "MAME standalone (desktop launcher)" OFF \
+            "MAME_ADDON"  "MAME as Kodi addon (inside Kodi)"   OFF \
             "RETROARCH"   "RetroArch multi-system emulator"    OFF \
             3>&1 1>&2 2>&3)
         
@@ -310,9 +311,8 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
             whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
             continue
-        else
-            break
         fi
+        break
     done
     
     # Ask about autostart for Kodi if selected
@@ -436,7 +436,7 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
       # Optional software selection - with validation loop
       while true; do
           APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-              "Select applications to install:" 22 68 11 \
+              "Select applications to install:" 24 68 12 \
               "KODI_PPA"    "Kodi Media Center (PPA - v20.x)"    OFF \
               "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
               "FIREFOX"     "Firefox web browser"                OFF \
@@ -446,7 +446,8 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
               "VLC"         "VLC Media Player"                   OFF \
               "GIMP"        "GIMP Image Editor"                  OFF \
               "STEAM"       "Steam gaming platform"              OFF \
-              "MAME"        "MAME arcade emulator"               OFF \
+              "MAME"        "MAME standalone (desktop launcher)" OFF \
+              "MAME_ADDON"  "MAME as Kodi addon (inside Kodi)"   OFF \
               "RETROARCH"   "RetroArch multi-system emulator"    OFF \
               3>&1 1>&2 2>&3)
           
@@ -454,9 +455,8 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
               whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
               continue
-          else
-              break
           fi
+          break
       done
       
       # Ask about autostart for Kodi if selected
