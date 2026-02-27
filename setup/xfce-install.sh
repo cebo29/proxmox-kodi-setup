@@ -76,15 +76,16 @@ apt-get update -qq &>/dev/null
 apt-get upgrade -y -qq &>/dev/null
 msg_ok "System updated"
 
-msg_info "Installing XFCE Desktop Environment"
+msg_info "Installing XFCE and base X packages"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     xfce4 xfce4-goodies xfce4-terminal \
     xorg xserver-xorg-video-intel \
+    xserver-xorg-input-evdev \
     zenity \
     pulseaudio pulseaudio-utils pavucontrol alsa-utils \
     software-properties-common curl wget \
     &>/dev/null
-msg_ok "Installed XFCE"
+msg_ok "Installed XFCE and base X packages"
 
 # ─────────────────────────────────────────────
 # kodi user
@@ -99,43 +100,48 @@ echo "kodi:${KODI_PASS}" | chpasswd
 msg_ok "kodi user ready (password set)"
 
 # ─────────────────────────────────────────────
-# lightdm autologin
+# lightdm — autologin to bare kodi-session (NOT xfce)
+# XFCE only loads when the user explicitly selects Desktop
 # ─────────────────────────────────────────────
-msg_info "Configuring lightdm autologin"
+msg_info "Configuring lightdm"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     lightdm lightdm-gtk-greeter &>/dev/null
 mkdir -p /etc/lightdm/lightdm.conf.d
 cat > /etc/lightdm/lightdm.conf.d/autologin-kodi.conf <<'EOF'
 [Seat:*]
 autologin-user=kodi
-autologin-session=xfce
+autologin-session=kodi-session
 EOF
-msg_ok "lightdm configured"
+msg_ok "lightdm configured (autologin → kodi-session)"
 
 # ─────────────────────────────────────────────
-# Xorg input detection (LXC-friendly)
+# Minimal kodi-session xsession entry
+# Points directly to session-manager.sh — no desktop loaded
+# ─────────────────────────────────────────────
+msg_info "Creating kodi-session xsession entry"
+mkdir -p /usr/share/xsessions
+cat > /usr/share/xsessions/kodi-session.desktop <<'EOF'
+[Desktop Entry]
+Name=Kodi Session
+Comment=Minimal session — session manager only, no desktop
+Exec=/usr/local/bin/session-manager.sh
+Type=Application
+EOF
+msg_ok "kodi-session xsession entry created"
+
+# ─────────────────────────────────────────────
+# Xorg input detection — uses printf (no nested heredoc)
 # ─────────────────────────────────────────────
 msg_info "Configuring Xorg input detection"
-apt-get install -y -qq xserver-xorg-input-evdev &>/dev/null
 cat > /usr/local/bin/preX-populate-input.sh <<'EOF'
 #!/usr/bin/env bash
 CFG=/etc/X11/xorg.conf.d/10-lxc-input.conf
 mkdir -p /etc/X11/xorg.conf.d
-cat > "$CFG" <<'_SEC_'
-Section "ServerFlags"
-    Option "AutoAddDevices" "True"
-EndSection
-_SEC_'
+printf 'Section "ServerFlags"\n    Option "AutoAddDevices" "True"\nEndSection\n' > "$CFG"
 cd /dev/input
 for input in event*; do
-cat >> "$CFG" <<_SEC_
-Section "InputDevice"
-    Identifier "$input"
-    Option "Device" "/dev/input/$input"
-    Option "AutoServerLayout" "true"
-    Driver "evdev"
-EndSection
-_SEC_
+    printf 'Section "InputDevice"\n    Identifier "%s"\n    Option "Device" "/dev/input/%s"\n    Option "AutoServerLayout" "true"\n    Driver "evdev"\nEndSection\n' \
+        "$input" "$input" >> "$CFG"
 done
 EOF
 chmod +x /usr/local/bin/preX-populate-input.sh
@@ -146,10 +152,10 @@ ExecStartPre=/bin/sh -c '/usr/local/bin/preX-populate-input.sh'
 SupplementaryGroups=video render input audio tty
 EOF
 systemctl daemon-reload
-msg_ok "Xorg input configured"
+msg_ok "Xorg input detection configured"
 
 # ─────────────────────────────────────────────
-# PolicyKit — let kodi user do system actions
+# PolicyKit
 # ─────────────────────────────────────────────
 msg_info "Configuring PolicyKit"
 mkdir -p /etc/polkit-1/localauthority/50-local.d
@@ -164,7 +170,7 @@ EOF
 msg_ok "PolicyKit configured"
 
 # ─────────────────────────────────────────────
-# PulseAudio baseline config
+# PulseAudio baseline
 # ─────────────────────────────────────────────
 msg_info "Configuring PulseAudio"
 mkdir -p /home/kodi/.config/pulse
@@ -189,7 +195,7 @@ if [[ "${CONFIGURE_AUDIO}" =~ ^[Yy] ]]; then
     mapfile -t DEVICE_NAMES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | sed 's/card [0-9]\+: \(.*\), device [0-9]\+: \(.*\)/\1 - \2/')
 
     if [ ${#DEVICES[@]} -eq 0 ]; then
-        msg_error "No audio devices detected — skipping (configure later from session menu)"
+        msg_error "No audio devices detected — configure later from session menu"
     else
         SKIP_AUDIO=false
         if [ ${#DEVICES[@]} -eq 1 ]; then
@@ -228,7 +234,6 @@ fi
 
 # ─────────────────────────────────────────────
 # Configure Audio helper script
-# (also reachable from the session menu)
 # ─────────────────────────────────────────────
 msg_info "Installing Configure Audio tool"
 cat > /usr/local/bin/configure-audio.sh <<'AUDIOEOF'
@@ -267,7 +272,7 @@ SEL_CARD=$(echo "$SELECTED" | sed 's/hw:\([0-9]\+\),.*/\1/')
 SEL_DEV=$(echo  "$SELECTED" | sed 's/hw:[0-9]\+,\([0-9]\+\)/\1/')
 
 zenity --info --title="Test Audio" \
-    --text="Playing test tone on $SELECTED — listen for a beep.\n\nClick OK to play." \
+    --text="Playing test tone on $SELECTED\n\nClick OK to play." \
     --width=380 2>/dev/null
 aplay -D plughw:${SEL_CARD},${SEL_DEV} /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null
 
@@ -301,11 +306,6 @@ msg_ok "Configure Audio tool installed"
 
 # ─────────────────────────────────────────────
 # RETROARCH
-# Install the binary from the official Libretro PPA.
-# We do NOT install separate libretro-* core packages — they are unreliable
-# in the stable PPA. Cores should be downloaded from inside RetroArch via:
-#   Main Menu → Online Updater → Core Downloader
-# Flatpak is used as a fallback if the PPA fails.
 # ─────────────────────────────────────────────
 RETROARCH_INSTALLED=false
 if [[ "${INSTALL_RETROARCH}" =~ ^[Yy] ]]; then
@@ -329,7 +329,6 @@ if [[ "${INSTALL_RETROARCH}" =~ ^[Yy] ]]; then
             https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
         if flatpak install -y --noninteractive flathub org.libretro.RetroArch &>/dev/null; then
             RETROARCH_INSTALLED=true
-            # Create a wrapper so 'retroarch' works as a plain command
             cat > /usr/local/bin/retroarch <<'EOF'
 #!/usr/bin/env bash
 exec flatpak run org.libretro.RetroArch "$@"
@@ -339,6 +338,37 @@ EOF
         else
             msg_error "RetroArch installation failed — skipping"
         fi
+    fi
+
+    # Pre-configure RetroArch for fullscreen and sensible defaults
+    if [ "$RETROARCH_INSTALLED" = true ]; then
+        msg_info "Configuring RetroArch defaults"
+        RETROARCH_CFG_DIR="/home/kodi/.config/retroarch"
+        mkdir -p "$RETROARCH_CFG_DIR"
+        cat > "$RETROARCH_CFG_DIR/retroarch.cfg" <<'EOF'
+# RetroArch defaults for kodi-session
+
+# Always start fullscreen
+video_fullscreen = "true"
+video_windowed_fullscreen = "false"
+
+# Use the system assets installed by retroarch-assets
+assets_directory = "/usr/share/retroarch-assets"
+libretro_info_path = "/usr/share/libretro/info"
+
+# Sane performance defaults
+video_threaded = "true"
+video_smooth = "false"
+audio_sync = "true"
+
+# Allow quit via Esc or dedicated hotkey
+input_exit_emulator = escape
+
+# Enable menu toggle with F1
+input_menu_toggle = f1
+EOF
+        chown -R kodi:kodi "$RETROARCH_CFG_DIR"
+        msg_ok "RetroArch configured (fullscreen, assets path set)"
     fi
 fi
 
@@ -351,7 +381,8 @@ if [[ "${INSTALL_KODI_PPA}" =~ ^[Yy] ]]; then
     add-apt-repository -y ppa:team-xbmc/ppa &>/dev/null
     apt-get update -qq &>/dev/null
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq kodi &>/dev/null
-    command -v kodi &>/dev/null && KODI_INSTALLED=true && msg_ok "Kodi PPA installed" \
+    command -v kodi &>/dev/null \
+        && KODI_INSTALLED=true && msg_ok "Kodi PPA installed" \
         || msg_error "Kodi PPA install failed"
 elif [[ "${INSTALL_KODI_FLATPAK}" =~ ^[Yy] ]]; then
     msg_info "Installing Kodi via Flatpak (v21.x)"
@@ -373,7 +404,7 @@ if [[ "${INSTALL_STEAM}" =~ ^[Yy] ]]; then
     dpkg --add-architecture i386 &>/dev/null
     apt-get update -qq &>/dev/null
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq steam-installer &>/dev/null
-    apt-get install -y -f -qq &>/dev/null   # fix any broken deps
+    apt-get install -y -f -qq &>/dev/null
     ( command -v steam &>/dev/null || [ -f /usr/games/steam ] ) \
         && STEAM_INSTALLED=true && msg_ok "Steam installed" \
         || msg_error "Steam install failed"
@@ -387,7 +418,6 @@ if [[ "${INSTALL_FIREFOX}" =~ ^[Yy] ]]; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq firefox &>/dev/null \
         && msg_ok "Firefox installed" || msg_error "Firefox failed"
 fi
-
 if [[ "${INSTALL_BRAVE}" =~ ^[Yy] ]]; then
     msg_info "Installing Brave"
     curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
@@ -399,7 +429,6 @@ https://brave-browser-apt-release.s3.brave.com/ stable main" \
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq brave-browser &>/dev/null \
         && msg_ok "Brave installed" || msg_error "Brave failed"
 fi
-
 if [[ "${INSTALL_CHROME}" =~ ^[Yy] ]]; then
     msg_info "Installing Google Chrome"
     wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
@@ -409,19 +438,16 @@ if [[ "${INSTALL_CHROME}" =~ ^[Yy] ]]; then
     command -v google-chrome &>/dev/null \
         && msg_ok "Chrome installed" || msg_error "Chrome failed"
 fi
-
 if [[ "${INSTALL_LIBREOFFICE}" =~ ^[Yy] ]]; then
     msg_info "Installing LibreOffice"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libreoffice &>/dev/null \
         && msg_ok "LibreOffice installed" || msg_error "LibreOffice failed"
 fi
-
 if [[ "${INSTALL_VLC}" =~ ^[Yy] ]]; then
     msg_info "Installing VLC"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq vlc &>/dev/null \
         && msg_ok "VLC installed" || msg_error "VLC failed"
 fi
-
 if [[ "${INSTALL_GIMP}" =~ ^[Yy] ]]; then
     msg_info "Installing GIMP"
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gimp &>/dev/null \
@@ -430,14 +456,18 @@ fi
 
 # ─────────────────────────────────────────────
 # Session Manager
-# Written to /usr/local/bin/session-manager.sh via heredoc.
-# This is the single XFCE autostart entry — it replaces all individual
-# per-app autostart files.
 #
-# Steam silent mode logic:
-#   When a non-Steam session is launched AND Steam is installed,
-#   start Steam in -silent mode so it can patch games in the background.
-#   Steam's own lock prevents double-launch if already running.
+# Architecture:
+#   lightdm autologins to "kodi-session" which runs this script directly.
+#   No desktop is loaded. The screen is black except for the zenity dialog.
+#   Apps launch fullscreen (kodi by default, retroarch --fullscreen,
+#   steam -gamepadui). When an app exits the loop brings the dialog back.
+#   Selecting "Desktop" is the ONLY thing that loads XFCE (exec startxfce4).
+#
+# Steam silent mode:
+#   When a non-Steam session is launched AND Steam is installed, start Steam
+#   with -silent so it updates games in the background. Steam's own lock
+#   prevents double-launch if already running.
 # ─────────────────────────────────────────────
 msg_info "Installing Session Manager"
 
@@ -445,9 +475,8 @@ cat > /usr/local/bin/session-manager.sh <<'SESSIONEOF'
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # Session Manager
-# Single XFCE autostart entry. Shows countdown before default app, loops back
-# to menu after each app exits. Steam runs silently in background for updates
-# whenever it isn't the foreground session.
+# Runs as the entire X session (via kodi-session.desktop).
+# No desktop environment is loaded until the user explicitly chooses Desktop.
 # ─────────────────────────────────────────────────────────────────────────────
 
 export DISPLAY="${DISPLAY:-:0}"
@@ -459,27 +488,25 @@ COUNTDOWN_SECS=5
 
 mkdir -p "$CONFIG_DIR"
 
+# Black background — nothing visible except our dialog
+xsetroot -solid black 2>/dev/null || true
+
 # ── Detect installed apps ────────────────────
 detect_apps() {
     HAVE_KODI=false
     HAVE_RETROARCH=false
     HAVE_STEAM=false
-
     ( command -v kodi &>/dev/null || \
       flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi" ) && HAVE_KODI=true
     command -v retroarch &>/dev/null && HAVE_RETROARCH=true
-    ( command -v steam &>/dev/null || [ -f /usr/games/steam ] || \
-      command -v retroarch &>/dev/null && flatpak list 2>/dev/null | grep -q "com.valvesoftware.Steam" \
-    ) && HAVE_STEAM=true
-    # Simpler steam check
     ( command -v steam &>/dev/null || [ -f /usr/games/steam ] ) && HAVE_STEAM=true
 }
 
-# ── Launch Steam silently for background updates ─────────────────────────────
-# Only starts Steam if it isn't already running. Uses -silent so no window.
+# ── Start Steam silently for background updates ──────────────────────────────
+# Only if Steam is installed and not already running. Uses -silent (no window).
 maybe_start_steam_silent() {
     $HAVE_STEAM || return 0
-    pgrep -x steam &>/dev/null && return 0   # already running
+    pgrep -x steam &>/dev/null && return 0
     if command -v steam &>/dev/null; then
         steam -silent &>/dev/null &
     elif [ -f /usr/games/steam ]; then
@@ -491,11 +518,11 @@ maybe_start_steam_silent() {
 build_menu_rows() {
     MENU_ROWS=()
     detect_apps
-    $HAVE_KODI       && MENU_ROWS+=("Kodi"              "Media center")
-    $HAVE_RETROARCH  && MENU_ROWS+=("RetroArch"         "Emulation frontend")
-    $HAVE_STEAM      && MENU_ROWS+=("Steam Big Picture" "Gaming (Big Picture mode)")
+    $HAVE_KODI      && MENU_ROWS+=("Kodi"              "Media center (fullscreen)")
+    $HAVE_RETROARCH && MENU_ROWS+=("RetroArch"         "Emulation frontend (fullscreen)")
+    $HAVE_STEAM     && MENU_ROWS+=("Steam Big Picture" "Gaming — Big Picture mode (fullscreen)")
     MENU_ROWS+=("─────────────────────" "")
-    MENU_ROWS+=("Desktop"              "Stay in XFCE desktop")
+    MENU_ROWS+=("Desktop"              "Load XFCE desktop environment")
     MENU_ROWS+=("─────────────────────" "")
     MENU_ROWS+=("Configure Audio"      "Set up audio output device")
     MENU_ROWS+=("Change Default"       "Choose which app launches on boot")
@@ -504,8 +531,8 @@ build_menu_rows() {
     MENU_ROWS+=("Shutdown"             "Shut down the system")
 }
 
-# ── 5-second countdown before default app ───
-# Returns 0 = timed out (launch default), 1 = cancelled (show menu)
+# ── 5-second countdown before auto-launching default ────────────────────────
+# Returns 0 = timed out (launch it), 1 = cancelled (show menu)
 show_countdown() {
     local label="$1"
     (
@@ -540,7 +567,7 @@ show_menu() {
         --title="Session Manager" \
         --text="Welcome! What would you like to do?$subtitle" \
         --column="Session" --column="Description" \
-        --width=520 --height=480 \
+        --width=520 --height=460 \
         --hide-column=0 --print-column=1 \
         "${MENU_ROWS[@]}" \
         2>/dev/null
@@ -553,12 +580,12 @@ change_default() {
     $HAVE_KODI      && opts+=("Kodi"              "Launch Kodi on boot")
     $HAVE_RETROARCH && opts+=("RetroArch"         "Launch RetroArch on boot")
     $HAVE_STEAM     && opts+=("Steam Big Picture" "Launch Steam Big Picture on boot")
-    opts+=("Desktop" "No auto-launch — show session menu on boot")
+    opts+=("Desktop" "Load XFCE desktop on boot")
 
     local chosen
     chosen=$(zenity --list \
         --title="Change Boot Default" \
-        --text="Choose which session starts automatically on boot:" \
+        --text="Which session starts automatically on boot?" \
         --column="Session" --column="Description" \
         --width=500 --height=340 \
         --hide-column=0 --print-column=1 \
@@ -578,10 +605,11 @@ change_default() {
     fi
 }
 
-# ── Launch an app by menu label ──────────────
+# ── Launch an app fullscreen ─────────────────
 launch_app() {
     case "$1" in
         "Kodi")
+            # Kodi is fullscreen by default
             if command -v kodi &>/dev/null; then
                 kodi
             else
@@ -589,61 +617,68 @@ launch_app() {
             fi
             ;;
         "RetroArch")
-            retroarch
+            # --fullscreen flag + retroarch.cfg also sets video_fullscreen=true
+            retroarch --fullscreen
             ;;
         "Steam Big Picture")
+            # -gamepadui is Steam's Big Picture fullscreen mode
             if command -v steam &>/dev/null; then
                 steam -gamepadui
             elif [ -f /usr/games/steam ]; then
                 /usr/games/steam -gamepadui
-            else
-                flatpak run com.valvesoftware.Steam -gamepadui
             fi
             ;;
     esac
+    # After any app exits, restore black background before showing menu again
+    xsetroot -solid black 2>/dev/null || true
 }
 
 # ── Main loop ────────────────────────────────
-detect_apps   # initial detection before the loop
+detect_apps
+
+FIRST_RUN=true
 
 while true; do
     DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
 
-    if [ -n "$DEFAULT" ] && [ "$DEFAULT" != "Desktop" ]; then
+    if [ "$FIRST_RUN" = true ] && [ -n "$DEFAULT" ] && [ "$DEFAULT" != "Desktop" ]; then
+        # Only show countdown on the very first run (boot)
         if show_countdown "$DEFAULT"; then
             CHOICE="$DEFAULT"
         else
             CHOICE=$(show_menu)
         fi
     else
+        # After an app exits, go straight to the menu — no countdown
         CHOICE=$(show_menu)
     fi
 
-    # Treat separators and closed dialog as Desktop
+    FIRST_RUN=false
+
+    # Separators and closed dialog → show menu again
     case "$CHOICE" in
-        "─────────────────────"|"") CHOICE="Desktop" ;;
+        "─────────────────────"|"") continue ;;
     esac
 
     case "$CHOICE" in
         "Kodi"|"RetroArch")
-            # Non-Steam foreground session: start Steam silently for updates
             maybe_start_steam_silent
             launch_app "$CHOICE"
             ;;
         "Steam Big Picture")
-            # Steam IS the foreground session — launch normally
             launch_app "$CHOICE"
             ;;
         "Desktop")
-            # Start Steam silently then release to desktop
-            maybe_start_steam_silent
-            break
+            # ONLY here does XFCE load — exec replaces this process
+            exec startxfce4
             ;;
         "Configure Audio")
             /usr/local/bin/configure-audio.sh
+            xsetroot -solid black 2>/dev/null || true
             ;;
         "Change Default")
             change_default
+            xsetroot -solid black 2>/dev/null || true
             ;;
         "Restart")
             systemctl reboot
@@ -657,7 +692,7 @@ SESSIONEOF
 
 chmod +x /usr/local/bin/session-manager.sh
 
-# Write the boot default chosen at install time
+# Write boot default from install-time choice
 SESSION_CONFIG_DIR="/home/kodi/.config/kodi-session"
 mkdir -p "$SESSION_CONFIG_DIR"
 if [ "$DEFAULT_SESSION" != "Desktop" ] && [ -n "$DEFAULT_SESSION" ]; then
@@ -667,38 +702,26 @@ else
     msg_ok "Session default: show menu on boot"
 fi
 chown -R kodi:kodi "$SESSION_CONFIG_DIR"
-msg_ok "Session Manager installed → /usr/local/bin/session-manager.sh"
+msg_ok "Session Manager installed"
 
 # ─────────────────────────────────────────────
-# XFCE autostart — single entry pointing to session manager
+# XFCE autostart — only used when user selects Desktop
+# Puts a session manager launcher on the desktop for convenience
 # ─────────────────────────────────────────────
-msg_info "Configuring XFCE autostart"
+msg_info "Configuring XFCE desktop shortcuts"
 mkdir -p /home/kodi/.config/autostart
-cat > /home/kodi/.config/autostart/session-manager.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=Session Manager
-Comment=Boot session chooser
-Exec=/usr/local/bin/session-manager.sh
-X-XFCE-Autostart-enabled=true
-EOF
-chown kodi:kodi /home/kodi/.config/autostart/session-manager.desktop
-msg_ok "XFCE autostart → session-manager"
-
-# ─────────────────────────────────────────────
-# Desktop shortcuts
-# ─────────────────────────────────────────────
-msg_info "Creating desktop shortcuts"
 mkdir -p /home/kodi/Desktop
+
+# No session-manager autostart in XFCE — it is the session, not a child of XFCE
 
 cat > /home/kodi/Desktop/session-manager.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Session Manager
-Comment=Open the session chooser menu
-Exec=/usr/local/bin/session-manager.sh
-Icon=preferences-system
+Name=Exit to Session Manager
+Comment=Close desktop and return to session chooser
+Exec=xfce4-session-logout --logout
+Icon=system-log-out
 Terminal=false
 EOF
 
@@ -751,17 +774,14 @@ done
 msg_ok "Desktop shortcuts created"
 
 # ─────────────────────────────────────────────
-# Per-app installer desktop shortcuts
-# Only created for apps that were NOT installed at setup time.
-# Each shortcut self-destructs after install.
+# Per-app installer shortcuts for skipped apps
 # ─────────────────────────────────────────────
 msg_info "Creating installer shortcuts for skipped apps"
 
-# Helper: write an installer script + matching .desktop shortcut
 write_installer_shortcut() {
-    local key="$1"       # e.g. RETROARCH
-    local label="$2"     # e.g. "Install RetroArch"
-    local cmd="$3"       # shell commands to install the app
+    local key="$1"
+    local label="$2"
+    local cmd="$3"
     local script="/usr/local/bin/install-${key,,}.sh"
     local desktop="/home/kodi/Desktop/install-${key,,}.desktop"
 
@@ -788,7 +808,6 @@ DESKEOF
     chown kodi:kodi "$desktop"
 }
 
-# RetroArch installer shortcut
 if ! [ "$RETROARCH_INSTALLED" = true ]; then
     write_installer_shortcut "RETROARCH" "Install RetroArch" \
 'apt-get install -y software-properties-common &>/dev/null
@@ -801,19 +820,14 @@ else
     apt-get install -y flatpak &>/dev/null
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
     flatpak install -y --noninteractive flathub org.libretro.RetroArch &>/dev/null
-    cat > /usr/local/bin/retroarch <<EOF
-#!/usr/bin/env bash
-exec flatpak run org.libretro.RetroArch "\$@"
-EOF
+    printf "#!/usr/bin/env bash\nexec flatpak run org.libretro.RetroArch \"\$@\"\n" > /usr/local/bin/retroarch
     chmod +x /usr/local/bin/retroarch
     echo "RetroArch installed via Flatpak."
 fi
 echo ""
-echo "Download cores from inside RetroArch:"
-echo "  Main Menu → Online Updater → Core Downloader"'
+echo "Download cores: Main Menu → Online Updater → Core Downloader"'
 fi
 
-# Steam installer shortcut
 if ! [ "$STEAM_INSTALLED" = true ]; then
     write_installer_shortcut "STEAM" "Install Steam" \
 'dpkg --add-architecture i386 &>/dev/null
@@ -823,7 +837,7 @@ apt-get install -y -f &>/dev/null
 echo "Steam installed."'
 fi
 
-# Kodi PPA/Flatpak switcher shortcuts (always present — allow easy switching)
+# Kodi version switcher shortcuts (always present)
 cat > /usr/local/bin/install-kodi-ppa.sh <<'EOF'
 #!/usr/bin/env bash
 echo "Switching to Kodi PPA (v20.x)..."
@@ -834,6 +848,7 @@ command -v kodi &>/dev/null && echo "Kodi PPA installed!" || echo "Install faile
 read -p "Press Enter to close..."
 EOF
 chmod +x /usr/local/bin/install-kodi-ppa.sh
+
 cat > /home/kodi/Desktop/install-kodi-ppa.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
@@ -855,6 +870,7 @@ flatpak list | grep -q "tv.kodi.Kodi" && echo "Kodi Flatpak installed!" || echo 
 read -p "Press Enter to close..."
 EOF
 chmod +x /usr/local/bin/install-kodi-flatpak.sh
+
 cat > /home/kodi/Desktop/install-kodi-flatpak.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
@@ -870,19 +886,20 @@ for f in /home/kodi/Desktop/*.desktop; do
     chown kodi:kodi "$f"
     sudo -u kodi gio set "$f" metadata::trusted true 2>/dev/null || true
 done
+
+chown -R kodi:kodi /home/kodi/.config /home/kodi/Desktop
+
 msg_ok "Installer shortcuts done"
 
 # ─────────────────────────────────────────────
-# XFCE / session environment
+# Session environment
 # ─────────────────────────────────────────────
 cat > /home/kodi/.xprofile <<'EOF'
 export DISPLAY=:0
 export XDG_RUNTIME_DIR=/run/user/1000
 EOF
 chown kodi:kodi /home/kodi/.xprofile
-chown -R kodi:kodi /home/kodi/.config /home/kodi/Desktop
 
-# PulseAudio user service
 sudo -u kodi XDG_RUNTIME_DIR=/run/user/1000 \
     systemctl --user enable pulseaudio.socket pulseaudio.service &>/dev/null || true
 
@@ -903,18 +920,18 @@ echo -e "${GN}╚═════════════════════
 
 echo -e "\n${BL}Session Manager:${CL}"
 if [ "$DEFAULT_SESSION" != "Desktop" ] && [ -n "$DEFAULT_SESSION" ]; then
-    echo -e "  • Boot default: ${GN}$DEFAULT_SESSION${CL} (5-second countdown, cancellable)"
+    echo -e "  • Boot: ${GN}black screen → $DEFAULT_SESSION countdown → fullscreen${CL}"
 else
-    echo -e "  • Boot default: ${GN}session menu appears immediately${CL}"
+    echo -e "  • Boot: ${GN}black screen → session menu${CL}"
 fi
-echo -e "  • After any app exits → session menu reappears automatically"
-echo -e "  • Steam starts silently in background (updates) when not the active session"
-echo -e "  • Change default any time: session menu → Change Default"
+echo -e "  • After any app exits → session menu reappears (black background)"
+echo -e "  • Desktop (XFCE) only loads if explicitly selected"
+echo -e "  • Steam runs silently in background when not the active session"
 
 echo -e "\n${BL}Installed:${CL}"
-[ "$KODI_INSTALLED"      = true ]    && echo -e "  ${CM} Kodi"
-[ "$RETROARCH_INSTALLED" = true ]    && echo -e "  ${CM} RetroArch  (download cores from Main Menu → Online Updater → Core Downloader)"
-[ "$STEAM_INSTALLED"     = true ]    && echo -e "  ${CM} Steam"
+[ "$KODI_INSTALLED"      = true ]       && echo -e "  ${CM} Kodi"
+[ "$RETROARCH_INSTALLED" = true ]       && echo -e "  ${CM} RetroArch  (fullscreen — download cores via Online Updater)"
+[ "$STEAM_INSTALLED"     = true ]       && echo -e "  ${CM} Steam"
 [[ "${INSTALL_FIREFOX}"    =~ ^[Yy] ]] && echo -e "  ${CM} Firefox"
 [[ "${INSTALL_BRAVE}"      =~ ^[Yy] ]] && echo -e "  ${CM} Brave"
 [[ "${INSTALL_CHROME}"     =~ ^[Yy] ]] && echo -e "  ${CM} Chrome"
@@ -925,6 +942,6 @@ echo -e "\n${BL}Installed:${CL}"
 if [ "$SKIP_AUDIO" = false ]; then
     echo -e "\n${BL}Audio:${CL} hw:${SELECTED_CARD},${SELECTED_DEV} — ${SELECTED_DEVICE_NAME}"
 else
-    echo -e "\n${BL}Audio:${CL} not configured — use ${GN}Configure Audio${CL} from session menu or desktop"
+    echo -e "\n${BL}Audio:${CL} not configured — use ${GN}Configure Audio${CL} from session menu"
 fi
 echo ""
