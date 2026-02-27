@@ -785,11 +785,11 @@ fi
 # ── MAME ──────────────────────────────────────────────────────────────────────
 if [[ $INSTALL_MAME =~ ^[Yy]$ ]]; then
     msg_info "Installing MAME"
-    # Use the SDLMAME PPA (ppa:c.falco/mame) - the dedicated maintained PPA
-    # for Ubuntu 22.04. The stock universe package is outdated and mame-doc
-    # was dropped. software-properties-common is required for add-apt-repository.
+    # mame is in the universe repo on Ubuntu 22.04. software-properties-common
+    # provides add-apt-repository. mame-doc is only Suggests (not Depends) so
+    # no broken-package issues on Jammy.
     apt-get install -y software-properties-common &>/dev/null
-    add-apt-repository -y ppa:c.falco/mame &>/dev/null
+    add-apt-repository -y universe &>/dev/null
     apt-get update &>/dev/null
     apt-get install -y mame &>/dev/null
     if command -v mame &> /dev/null; then
@@ -843,14 +843,9 @@ if [[ $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
     if [ -z "$ADDONS_XML" ]; then
         msg_error "MAME Kodi addon installation failed (could not reach GitHub)"
     else
-        # Extract the <path> element for our core (looks like: linux/ADDON-VERSION.zip)
-        CORE_PATH=$(echo "$ADDONS_XML" | tr -d '\n' | \
-            grep -oP "(?<=id=\"${CORE_ID}\")[^<]*<[^<]*<[^<]*<[^<]*<path>\K[^<]+")
-        # Simpler fallback: just grep for the path tag near the addon id
-        if [ -z "$CORE_PATH" ]; then
-            CORE_PATH=$(echo "$ADDONS_XML" | grep -A10 "id=\"${CORE_ID}\"" | \
-                grep -oP '(?<=<path>)[^<]+' | head -1)
-        fi
+        # Extract path directly by pattern-matching the zip filename - no line-context needed
+        CORE_PATH=$(echo "$ADDONS_XML" | \
+            grep -oP "linux/game\.libretro\.mame2003_plus_libretro_buildbot[^<\"]+\.zip" | head -1)
 
         if [ -z "$CORE_PATH" ]; then
             msg_error "MAME Kodi addon installation failed (core not found in index)"
@@ -1328,9 +1323,9 @@ if [[ ! $INSTALL_MAME =~ ^[Yy]$ ]]; then
     cat <<'MAMEINSTEOF' >/usr/local/bin/install-mame.sh
 #!/usr/bin/env bash
 echo "Installing MAME..."
-# Use the SDLMAME PPA (ppa:c.falco/mame) - maintained PPA with current Ubuntu 22.04 builds
+# mame is in universe on Ubuntu 22.04. mame-doc is only Suggests, not Depends.
 apt-get install -y software-properties-common &>/dev/null
-add-apt-repository -y ppa:c.falco/mame &>/dev/null
+add-apt-repository -y universe &>/dev/null
 apt-get update &>/dev/null
 apt-get install -y mame &>/dev/null
 if command -v mame &> /dev/null; then
@@ -1406,7 +1401,8 @@ if [ -z "$ADDONS_XML" ]; then
     exit 1
 fi
 
-CORE_PATH=$(echo "$ADDONS_XML" | grep -A10 "id=\"${CORE_ID}\"" | grep -oP '(?<=<path>)[^<]+' | head -1)
+CORE_PATH=$(echo "$ADDONS_XML" | \
+    grep -oP "linux/game\.libretro\.mame2003_plus_libretro_buildbot[^<\"]+\.zip" | head -1)
 
 if [ -z "$CORE_PATH" ]; then
     echo ""
