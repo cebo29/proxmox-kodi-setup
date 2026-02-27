@@ -785,8 +785,11 @@ fi
 # ── MAME ──────────────────────────────────────────────────────────────────────
 if [[ $INSTALL_MAME =~ ^[Yy]$ ]]; then
     msg_info "Installing MAME"
-    # mame-doc was removed from Ubuntu 22.04; universe repo must be enabled
-    add-apt-repository -y universe &>/dev/null
+    # Use the SDLMAME PPA (ppa:c.falco/mame) - the dedicated maintained PPA
+    # for Ubuntu 22.04. The stock universe package is outdated and mame-doc
+    # was dropped. software-properties-common is required for add-apt-repository.
+    apt-get install -y software-properties-common &>/dev/null
+    add-apt-repository -y ppa:c.falco/mame &>/dev/null
     apt-get update &>/dev/null
     apt-get install -y mame &>/dev/null
     if command -v mame &> /dev/null; then
@@ -819,50 +822,55 @@ if [[ $INSTALL_MAME_ADDON =~ ^[Yy]$ ]]; then
     msg_info "Installing MAME Kodi addon"
     apt-get install -y unzip wget &>/dev/null
 
-    # Pick the correct Kodi mirror repo based on which Kodi was installed
-    if [[ "${INSTALL_APPS:-}" == *"KODI_FLATPAK"* ]]; then
-        KODI_REPO="omega"   # Flatpak = Kodi 21.x
-    else
-        KODI_REPO="nexus"   # PPA or undetected = Kodi 20.x
-    fi
+    # Step 1: Install the game.libretro wrapper via apt.
+    # The official Kodi mirror has NO Linux x86_64 binaries for game.libretro;
+    # Ubuntu ships it as a proper .deb in their own repos.
+    apt-get install -y kodi-game-libretro &>/dev/null
 
-    ADDON_BASE_URL="https://mirrors.kodi.tv/addons/${KODI_REPO}"
     ADDON_DIR="/home/kodi/.kodi/addons"
     mkdir -p "$ADDON_DIR"
 
-    # Helper: download and extract an addon zip from the Kodi mirror
-    install_kodi_addon() {
-        local addon_id="$1"
-        local addon_xml version
-        addon_xml=$(wget -qO- "${ADDON_BASE_URL}/${addon_id}/addon.xml" 2>/dev/null)
-        [ -z "$addon_xml" ] && return 1
-        # Merge to single line first so the regex works regardless of line breaks in the xml
-        local oneline
-        oneline=$(echo "$addon_xml" | tr -d '\n')
-        version=$(echo "$oneline" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
-        # Fallback: grab the version attribute from the opening <addon ...> tag only
-        [ -z "$version" ] && version=$(echo "$oneline" | grep -oP '<addon[^>]*version="\K[^"]+')
-        [ -z "$version" ] && return 1
-        wget -qO "/tmp/${addon_id}.zip" \
-            "${ADDON_BASE_URL}/${addon_id}/${addon_id}-${version}.zip" 2>/dev/null || return 1
-        unzip -qo "/tmp/${addon_id}.zip" -d "$ADDON_DIR" 2>/dev/null || return 1
-        rm -f "/tmp/${addon_id}.zip"
-        return 0
-    }
+    # Step 2: Download the MAME core from the zach-morris libretro buildbot repo.
+    # This is the only source of Linux x86_64 MAME cores packaged for Kodi.
+    # The addons.xml index lists <path>linux/ADDON-VERSION.zip</path> for each addon.
+    # We use mame2003_plus which has the widest ROM compatibility and is confirmed working.
+    BUILDBOT_RAW="https://github.com/zach-morris/kodi_libretro_buildbot_game_addons/raw/main"
+    CORE_ID="game.libretro.mame2003_plus_libretro_buildbot"
 
-    # game.libretro is the base libretro wrapper Kodi needs (dependency of game.libretro.mame)
-    ADDON_OK=true
-    install_kodi_addon "game.libretro"      || ADDON_OK=false
-    install_kodi_addon "game.libretro.mame" || ADDON_OK=false
+    msg_info "Resolving MAME core version from buildbot index..."
+    ADDONS_XML=$(wget -qO- "${BUILDBOT_RAW}/addons.xml" 2>/dev/null)
 
-    if $ADDON_OK && [ -d "$ADDON_DIR/game.libretro.mame" ]; then
-        # Create ROMs directory and set ownership of everything
-        mkdir -p /home/kodi/ROMs/mame
-        chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
-        msg_ok "Installed MAME Kodi addon"
-        echo -e "   ${GN}→ Add ~/ROMs/mame as a Games source in Kodi to browse your library${CL}"
+    if [ -z "$ADDONS_XML" ]; then
+        msg_error "MAME Kodi addon installation failed (could not reach GitHub)"
     else
-        msg_error "MAME Kodi addon installation failed (check internet or Kodi repo availability)"
+        # Extract the <path> element for our core (looks like: linux/ADDON-VERSION.zip)
+        CORE_PATH=$(echo "$ADDONS_XML" | tr -d '\n' | \
+            grep -oP "(?<=id=\"${CORE_ID}\")[^<]*<[^<]*<[^<]*<[^<]*<path>\K[^<]+")
+        # Simpler fallback: just grep for the path tag near the addon id
+        if [ -z "$CORE_PATH" ]; then
+            CORE_PATH=$(echo "$ADDONS_XML" | grep -A10 "id=\"${CORE_ID}\"" | \
+                grep -oP '(?<=<path>)[^<]+' | head -1)
+        fi
+
+        if [ -z "$CORE_PATH" ]; then
+            msg_error "MAME Kodi addon installation failed (core not found in index)"
+        else
+            CORE_URL="${BUILDBOT_RAW}/${CORE_PATH}"
+            CORE_ZIP="/tmp/$(basename "$CORE_PATH")"
+            msg_info "Downloading $(basename "$CORE_PATH")..."
+            wget -qO "$CORE_ZIP" "$CORE_URL" 2>/dev/null
+
+            if unzip -qo "$CORE_ZIP" -d "$ADDON_DIR" 2>/dev/null; then
+                rm -f "$CORE_ZIP"
+                mkdir -p /home/kodi/ROMs/mame
+                chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
+                msg_ok "Installed MAME Kodi addon (mame2003_plus - MAME 2003-Plus)"
+                echo -e "   ${GN}→ In Kodi: Add Games source → ~/ROMs/mame → browse with RetroPlayer${CL}"
+            else
+                rm -f "$CORE_ZIP"
+                msg_error "MAME Kodi addon installation failed (unzip error)"
+            fi
+        fi
     fi
 fi
 
@@ -1320,8 +1328,9 @@ if [[ ! $INSTALL_MAME =~ ^[Yy]$ ]]; then
     cat <<'MAMEINSTEOF' >/usr/local/bin/install-mame.sh
 #!/usr/bin/env bash
 echo "Installing MAME..."
-# mame-doc was removed from Ubuntu 22.04; universe repo must be enabled
-add-apt-repository -y universe &>/dev/null
+# Use the SDLMAME PPA (ppa:c.falco/mame) - maintained PPA with current Ubuntu 22.04 builds
+apt-get install -y software-properties-common &>/dev/null
+add-apt-repository -y ppa:c.falco/mame &>/dev/null
 apt-get update &>/dev/null
 apt-get install -y mame &>/dev/null
 if command -v mame &> /dev/null; then
@@ -1376,58 +1385,59 @@ echo "Installing MAME as a Kodi addon..."
 echo ""
 apt-get install -y unzip wget &>/dev/null
 
-# Detect installed Kodi version to pick correct mirror repo
-if flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi"; then
-    KODI_REPO="omega"
-else
-    KODI_REPO="nexus"
-fi
-echo "Using Kodi repo: ${KODI_REPO}"
+# Step 1: Install the game.libretro wrapper via apt (Ubuntu ships it as a .deb)
+echo "Installing game.libretro wrapper..."
+apt-get install -y kodi-game-libretro &>/dev/null
 
-ADDON_BASE_URL="https://mirrors.kodi.tv/addons/${KODI_REPO}"
+# Step 2: Download the MAME 2003-Plus core from the zach-morris libretro buildbot repo.
+# The official Kodi mirror has NO Linux x86_64 MAME builds - this is the correct source.
+BUILDBOT_RAW="https://github.com/zach-morris/kodi_libretro_buildbot_game_addons/raw/main"
+CORE_ID="game.libretro.mame2003_plus_libretro_buildbot"
 ADDON_DIR="/home/kodi/.kodi/addons"
 mkdir -p "$ADDON_DIR"
 
-install_kodi_addon() {
-    local addon_id="$1"
-    local addon_xml version
-    addon_xml=$(wget -qO- "${ADDON_BASE_URL}/${addon_id}/addon.xml" 2>/dev/null)
-    [ -z "$addon_xml" ] && return 1
-    local oneline
-    oneline=$(echo "$addon_xml" | tr -d '\n')
-    version=$(echo "$oneline" | grep -oP "id=\"${addon_id}\"[^>]*version=\"\K[^\"]+")
-    [ -z "$version" ] && version=$(echo "$oneline" | grep -oP '<addon[^>]*version="\K[^"]+')
-    [ -z "$version" ] && return 1
-    wget -qO "/tmp/${addon_id}.zip" \
-        "${ADDON_BASE_URL}/${addon_id}/${addon_id}-${version}.zip" 2>/dev/null || return 1
-    unzip -qo "/tmp/${addon_id}.zip" -d "$ADDON_DIR" 2>/dev/null || return 1
-    rm -f "/tmp/${addon_id}.zip"
-    echo "  Installed: ${addon_id} v${version}"
-    return 0
-}
+echo "Fetching buildbot addon index..."
+ADDONS_XML=$(wget -qO- "${BUILDBOT_RAW}/addons.xml" 2>/dev/null)
 
-ADDON_OK=true
-echo "Downloading game.libretro (dependency)..."
-install_kodi_addon "game.libretro"      || ADDON_OK=false
-echo "Downloading game.libretro.mame..."
-install_kodi_addon "game.libretro.mame" || ADDON_OK=false
+if [ -z "$ADDONS_XML" ]; then
+    echo ""
+    echo "Installation failed: could not reach GitHub. Check internet and try again."
+    read -p "Press Enter to exit..."
+    exit 1
+fi
 
-if $ADDON_OK && [ -d "$ADDON_DIR/game.libretro.mame" ]; then
+CORE_PATH=$(echo "$ADDONS_XML" | grep -A10 "id=\"${CORE_ID}\"" | grep -oP '(?<=<path>)[^<]+' | head -1)
+
+if [ -z "$CORE_PATH" ]; then
+    echo ""
+    echo "Installation failed: core not found in addon index."
+    read -p "Press Enter to exit..."
+    exit 1
+fi
+
+CORE_URL="${BUILDBOT_RAW}/${CORE_PATH}"
+CORE_ZIP="/tmp/$(basename "$CORE_PATH")"
+echo "Downloading $(basename "$CORE_PATH")..."
+wget -qO "$CORE_ZIP" "$CORE_URL" 2>/dev/null
+
+if unzip -qo "$CORE_ZIP" -d "$ADDON_DIR" 2>/dev/null; then
+    rm -f "$CORE_ZIP"
     mkdir -p /home/kodi/ROMs/mame
     chown -R kodi:kodi /home/kodi/.kodi /home/kodi/ROMs
     echo ""
-    echo "MAME Kodi addon installed successfully!"
+    echo "MAME Kodi addon installed successfully! (MAME 2003-Plus)"
     echo "Next steps:"
     echo "  1. Open Kodi"
-    echo "  2. Go to Add-ons -> Enable 'MAME' if prompted"
-    echo "  3. Add Games source pointing to ~/ROMs/mame"
+    echo "  2. Go to Games -> Add Games source -> ~/ROMs/mame"
+    echo "  3. Long-press a ROM and choose Play to launch with MAME"
     echo ""
     echo "The desktop installer will now be deleted."
     rm -f /home/kodi/Desktop/install-mame-addon.desktop
     rm -f "$0"
 else
+    rm -f "$CORE_ZIP"
     echo ""
-    echo "Installation failed. Check your internet connection and try again."
+    echo "Installation failed (unzip error). Check your internet connection and try again."
 fi
 read -p "Press Enter to exit..."
 MAMEADDONINSTEOF
