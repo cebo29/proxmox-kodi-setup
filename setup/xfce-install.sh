@@ -1379,7 +1379,10 @@ else
 fi
 
 
-systemctl restart lightdm
+# Restart lightdm in the background so it cannot send SIGHUP to this session.
+# Running it synchronously causes lxc-attach to be killed by the VT switch,
+# which makes kodi-v1.sh think the install failed and triggers || exit.
+systemctl restart lightdm &>/dev/null &
 msg_ok "Restarted lightdm"
 
 echo -e "\n${GN}Setup complete!${CL}"
@@ -1402,16 +1405,17 @@ echo -e "  4. Desktop shortcuts: Volume Control, Shutdown, Reboot, Configure Aud
 echo -e "  5. Shutdown/Reboot works from XFCE menu and desktop shortcuts"
 
 # Count skipped apps
-SKIPPED=0
-((SKIPPED+=2))  # Always count both Kodi installers (always available)
-[[ ! $INSTALL_FIREFOX =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_BRAVE =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_CHROME =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_VLC =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_GIMP =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_STEAM =~ ^[Yy]$ ]] && ((SKIPPED++))
-[[ ! $INSTALL_RETROARCH =~ ^[Yy]$ ]] && ((SKIPPED++))
+# Use if-blocks instead of [[ ]] && (( )) — the && form leaks exit code 1
+# when the test is false (app IS installed), which can abort the script.
+SKIPPED=2  # Always include both Kodi switcher shortcuts
+if [[ ! $INSTALL_FIREFOX    =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_BRAVE      =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_CHROME     =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_LIBREOFFICE =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_VLC        =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_GIMP       =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_STEAM      =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
+if [[ ! $INSTALL_RETROARCH  =~ ^[Yy]$ ]]; then SKIPPED=$((SKIPPED+1)); fi
 
 if [ $SKIPPED -gt 0 ]; then
     echo -e "  6. ${SKIPPED} app installer(s) available on desktop for later installation"
@@ -1430,3 +1434,5 @@ else
 fi
 
 echo -e "\n${GN}All done! Enjoy your XFCE desktop.${CL}"
+
+exit 0
