@@ -89,6 +89,7 @@ KODI_PASS="$KODI_PASS"
 CONFIGURE_AUDIO="$CONFIGURE_AUDIO"
 KODI_AUTOSTART="$KODI_AUTOSTART"
 STEAM_AUTOSTART="$STEAM_AUTOSTART"
+RETROARCH_AUTOSTART="$RETROARCH_AUTOSTART"
 EOF
     echo -e "${GN}Settings saved to $SETTINGS_FILE${CL}"
 }
@@ -265,7 +266,7 @@ else
   fi  
 fi
 
-# Ask user which installation mode they want (MOVED HERE - BEFORE "Ready to create")
+# Ask user which installation mode they want
 if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation mode:\n\nYes = XFCE Desktop Environment\n       • Full desktop with XFCE\n       • Exit Kodi to desktop\n       • Browser, apps, volume control\n       • Best for general use\n\nNo  = Standalone Kodi Only\n       • Kodi on TTY7 (direct)\n       • Minimal system resources\n       • Best performance\n       • Media center only" 18 68); then
     INSTALL_MODE="xfce"
     echo -e "${GN}Selected: Kodi with XFCE Desktop Environment${CL}"
@@ -289,12 +290,13 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         echo -e "${YW}Audio configuration will be skipped${CL}"
     fi
     
-    # Optional software selection (including Kodi) - with validation loop
+    # Optional software selection (including Kodi and RetroArch) - with validation loop
     while true; do
         APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-            "Select applications to install:" 18 68 9 \
+            "Select applications to install:" 22 68 11 \
             "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
             "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
+            "RETROARCH" "RetroArch Emulation Frontend (PPA)" OFF \
             "FIREFOX" "Firefox web browser" OFF \
             "BRAVE" "Brave web browser" OFF \
             "CHROME" "Google Chrome" OFF \
@@ -326,6 +328,19 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
         KODI_AUTOSTART="no"
     fi
     
+    # Ask about autostart for RetroArch if selected
+    if [[ "$APPS" == *"RETROARCH"* ]]; then
+        if (whiptail --title "RETROARCH AUTOSTART" --yesno "Start RetroArch automatically on boot?" 8 58); then
+            RETROARCH_AUTOSTART="yes"
+            echo -e "${GN}RetroArch will autostart on boot${CL}"
+        else
+            RETROARCH_AUTOSTART="no"
+            echo -e "${YW}RetroArch will not autostart (can launch manually)${CL}"
+        fi
+    else
+        RETROARCH_AUTOSTART="no"
+    fi
+    
     # Ask about autostart for Steam if selected
     if [[ "$APPS" == *"STEAM"* ]]; then
         if (whiptail --title "STEAM AUTOSTART" --yesno "Start Steam automatically on boot?" 8 58); then
@@ -343,6 +358,7 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
     export KODI_PASS
     export CONFIGURE_AUDIO
     export KODI_AUTOSTART
+    export RETROARCH_AUTOSTART
     export STEAM_AUTOSTART
     export INSTALL_APPS="$APPS"
 else
@@ -377,14 +393,14 @@ if [ -f "$SETTINGS_FILE" ]; then
         
         if (whiptail --title "USE SAVED SETTINGS?" --yesno "Use these saved settings?" 10 58); then
             echo -e "${GN}Using saved settings${CL}"
-            # Settings already loaded, just need to get next container ID
             CT_ID=$(pvesh get /cluster/nextid)
             echo -e "${DGN}Using Next Available Container ID: ${BGN}$CT_ID${CL}"
             
-            # Set defaults for XFCE variables if they don't exist (old saved settings compatibility)
+            # Set defaults for variables (old saved settings compatibility)
             KODI_PASS="${KODI_PASS:-kodi}"
             CONFIGURE_AUDIO="${CONFIGURE_AUDIO:-no}"
             KODI_AUTOSTART="${KODI_AUTOSTART:-yes}"
+            RETROARCH_AUTOSTART="${RETROARCH_AUTOSTART:-no}"
             STEAM_AUTOSTART="${STEAM_AUTOSTART:-yes}"
             
             # Export XFCE variables if in XFCE mode
@@ -392,14 +408,12 @@ if [ -f "$SETTINGS_FILE" ]; then
                 export KODI_PASS
                 export CONFIGURE_AUDIO
                 export KODI_AUTOSTART
+                export RETROARCH_AUTOSTART
                 export STEAM_AUTOSTART
                 export INSTALL_APPS
             fi
             
-            # Don't save again - already using saved settings
             SAVE_SETTINGS=false
-            
-            # Skip to container creation
             return 0
         else
             echo -e "${YW}Starting fresh configuration...${CL}"
@@ -435,12 +449,13 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           echo -e "${YW}Audio configuration will be skipped${CL}"
       fi
       
-      # Optional software selection (including Kodi) - with validation loop
+      # Optional software selection (including Kodi and RetroArch) - with validation loop
       while true; do
           APPS=$(whiptail --title "OPTIONAL SOFTWARE" --checklist \
-              "Select applications to install:" 18 68 9 \
+              "Select applications to install:" 22 68 11 \
               "KODI_PPA" "Kodi Media Center (PPA - v20.x)" OFF \
               "KODI_FLATPAK" "Kodi Media Center (Flatpak - v21.x)" OFF \
+              "RETROARCH" "RetroArch Emulation Frontend (PPA)" OFF \
               "FIREFOX" "Firefox web browser" OFF \
               "BRAVE" "Brave web browser" OFF \
               "CHROME" "Google Chrome" OFF \
@@ -472,6 +487,19 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
           KODI_AUTOSTART="no"
       fi
       
+      # Ask about autostart for RetroArch if selected
+      if [[ "$APPS" == *"RETROARCH"* ]]; then
+          if (whiptail --title "RETROARCH AUTOSTART" --yesno "Start RetroArch automatically on boot?" 8 58); then
+              RETROARCH_AUTOSTART="yes"
+              echo -e "${GN}RetroArch will autostart on boot${CL}"
+          else
+              RETROARCH_AUTOSTART="no"
+              echo -e "${YW}RetroArch will not autostart (can launch manually)${CL}"
+          fi
+      else
+          RETROARCH_AUTOSTART="no"
+      fi
+      
       # Ask about autostart for Steam if selected
       if [[ "$APPS" == *"STEAM"* ]]; then
           if (whiptail --title "STEAM AUTOSTART" --yesno "Start Steam automatically on boot?" 8 58); then
@@ -489,6 +517,7 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
       export KODI_PASS
       export CONFIGURE_AUDIO
       export KODI_AUTOSTART
+      export RETROARCH_AUTOSTART
       export STEAM_AUTOSTART
       export INSTALL_APPS="$APPS"
   else
@@ -576,11 +605,9 @@ if [ "$CT_TYPE" == "1" ]; then
     cat <<EOF >> $LXC_CONFIG
 lxc.idmap: u 0 100000 65536
 EOF
-    #TODO internalize code to generate mapping instad of using external python script
     LXC_SUB_CONF=$(python3 -c "$(wget -qLO - https://raw.githubusercontent.com/ddimick/proxmox-lxc-idmapper/master/run.py)" \
       ${VIDEO_GID}=$(getent group video | cut -d: -f3) ${RENDER_GID}=$(getent group render | cut -d: -f3) ${TTY_GID}=$(getent group tty | cut -d: -f3) ${INPUT_GID}=$(getent group input | cut -d: -f3) ${AUDIO_GID}=$(getent group audio | cut -d: -f3)) 
     echo "$LXC_SUB_CONF" | grep 'lxc.idmap: g ' >> $LXC_CONFIG
-    # on host add rights to map gids but only if they are not already in the file
     echo "$LXC_SUB_CONF" | sed -n '/subgid/,// { /subgid/! p }' | while read line; do cat /etc/subgid | sed 's/[[:blank:]]*//g' | grep -qxF "$line" || echo $line >> /etc/subgid; done
     /usr/bin/systemctl restart lxc
 else
@@ -611,7 +638,7 @@ msg_ok "Started LXC Container"
 
 # Run the appropriate installation script based on earlier selection
 if [ "$INSTALL_MODE" = "xfce" ]; then
-    lxc-attach -n $CTID -- bash -c "export KODI_PASS='$KODI_PASS' CONFIGURE_AUDIO='$CONFIGURE_AUDIO' KODI_AUTOSTART='$KODI_AUTOSTART' STEAM_AUTOSTART='$STEAM_AUTOSTART' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
+    lxc-attach -n $CTID -- bash -c "export KODI_PASS='$KODI_PASS' CONFIGURE_AUDIO='$CONFIGURE_AUDIO' KODI_AUTOSTART='$KODI_AUTOSTART' RETROARCH_AUTOSTART='$RETROARCH_AUTOSTART' STEAM_AUTOSTART='$STEAM_AUTOSTART' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE Desktop installed successfully!"
     ADDITIONAL_INFO="• Custom desktop environment\n• All selected applications installed\n• Audio configuration desktop shortcut available"
 else
