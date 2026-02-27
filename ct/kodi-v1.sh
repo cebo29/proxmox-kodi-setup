@@ -293,19 +293,13 @@ if (whiptail --title "KODI INSTALLATION MODE" --yesno "Choose Kodi installation 
             "VLC"         "VLC Media Player"                   OFF \
             "GIMP"        "GIMP Image Editor"                  OFF \
             "STEAM"       "Steam gaming platform"              OFF \
-            "MAME"        "MAME standalone (desktop launcher)" OFF \
-            "MAME_ADDON"  "MAME as Kodi addon (inside Kodi)"   OFF \
+            "MAME"        "MAME + AML Launcher (play ROMs in Kodi)" OFF \
             "RETROARCH"   "RetroArch multi-system emulator"    OFF \
             3>&1 1>&2 2>&3)
         
         # Validate: can't install both Kodi versions
         if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
             whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
-            continue
-        fi
-        # Validate: MAME addon needs Kodi
-        if [[ "$APPS" == *"MAME_ADDON"* ]] && [[ "$APPS" != *"KODI_PPA"* ]] && [[ "$APPS" != *"KODI_FLATPAK"* ]]; then
-            whiptail --msgbox "Warning: MAME as Kodi addon requires Kodi to be installed!\n\nPlease also select:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nAlternatively, select MAME standalone instead.\n\nClick OK to re-select applications." 16 58 --title "KODI REQUIRED"
             continue
         fi
         break
@@ -448,19 +442,13 @@ if (whiptail --title "SETTINGS" --yesno "Use Default Settings?" --no-button Adva
               "VLC"         "VLC Media Player"                   OFF \
               "GIMP"        "GIMP Image Editor"                  OFF \
               "STEAM"       "Steam gaming platform"              OFF \
-              "MAME"        "MAME standalone (desktop launcher)" OFF \
-              "MAME_ADDON"  "MAME as Kodi addon (inside Kodi)"   OFF \
+              "MAME"        "MAME + AML Launcher (play ROMs in Kodi)" OFF \
               "RETROARCH"   "RetroArch multi-system emulator"    OFF \
               3>&1 1>&2 2>&3)
           
           # Validate: can't install both Kodi versions
           if [[ "$APPS" == *"KODI_PPA"* ]] && [[ "$APPS" == *"KODI_FLATPAK"* ]]; then
               whiptail --msgbox "Error: Cannot install both Kodi versions!\n\nPlease select only ONE:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nClick OK to re-select applications." 14 58 --title "CONFLICT DETECTED"
-              continue
-          fi
-          # Validate: MAME addon needs Kodi
-          if [[ "$APPS" == *"MAME_ADDON"* ]] && [[ "$APPS" != *"KODI_PPA"* ]] && [[ "$APPS" != *"KODI_FLATPAK"* ]]; then
-              whiptail --msgbox "Warning: MAME as Kodi addon requires Kodi to be installed!\n\nPlease also select:\n  • Kodi PPA (v20.x)\n  OR\n  • Kodi Flatpak (v21.x)\n\nAlternatively, select MAME standalone instead.\n\nClick OK to re-select applications." 16 58 --title "KODI REQUIRED"
               continue
           fi
           break
@@ -624,7 +612,14 @@ msg_ok "Started LXC Container"
 if [ "$INSTALL_MODE" = "xfce" ]; then
     lxc-attach -n $CTID -- bash -c "export KODI_PASS='$KODI_PASS' CONFIGURE_AUDIO='$CONFIGURE_AUDIO' KODI_AUTOSTART='$KODI_AUTOSTART' STEAM_AUTOSTART='$STEAM_AUTOSTART' INSTALL_APPS='$INSTALL_APPS'; $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE Desktop installed successfully!"
-    ADDITIONAL_INFO="• Custom desktop environment\n• All selected applications installed\n• Audio configuration desktop shortcut available"
+    # Read any app failures written by xfce-install.sh and build accurate summary
+    FAILED_LIST=$(pct exec $CTID -- cat /tmp/kodi-install-failures.txt 2>/dev/null || true)
+    if [ -n "$FAILED_LIST" ]; then
+        FAILED_FORMATTED=$(echo "$FAILED_LIST" | paste -sd ', ')
+        ADDITIONAL_INFO="• Custom desktop environment\n• Some apps failed to install: ${FAILED_FORMATTED}\n• Audio configuration desktop shortcut available"
+    else
+        ADDITIONAL_INFO="• Custom desktop environment\n• All selected applications installed\n• Audio configuration desktop shortcut available"
+    fi
 else
     lxc-attach -n $CTID -- bash -c "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/$var_install.sh)" || exit
     SUCCESS_MSG="Standalone Kodi installed successfully!"
@@ -642,7 +637,7 @@ fi
 msg_ok "Completed Successfully!\n"
 
 echo -e "\n${GN}╔════════════════════════════════════════════════╗${CL}"
-echo -e "${GN}║        Kodi LXC Setup Complete!               ║${CL}"
+echo -e "${GN}║        Kodi LXC Setup Complete!                ║${CL}"
 echo -e "${GN}╚════════════════════════════════════════════════╝${CL}\n"
 echo -e "${SUCCESS_MSG}"
 echo -e "\n${BL}Container Details:${CL}"
