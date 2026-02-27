@@ -224,15 +224,36 @@ if [ -n "$KODI_EXEC" ]; then
     # Check if autostart is enabled (default to yes)
     if [ "${KODI_AUTOSTART:-yes}" = "yes" ]; then
         mkdir -p /home/kodi/.config/autostart
+
+        # Wrapper script: gives XFCE and PulseAudio a few seconds to finish
+        # initializing before Kodi starts. Without this delay, Kodi launches
+        # before PulseAudio is ready and exits silently.
+        cat > /usr/local/bin/kodi-autostart.sh <<KODISTART
+#!/usr/bin/env bash
+sleep 5
+exec ${KODI_EXEC}
+KODISTART
+        chmod +x /usr/local/bin/kodi-autostart.sh
+
+        # Complete XDG autostart desktop file.
+        # Hidden=false and StartupNotify=false are required — without them
+        # xfce4-session may skip the entry or wait for a startup notification
+        # that Kodi never sends.  X-GNOME-Autostart-enabled is the standard
+        # key that XFCE (and other session managers) honour.
         cat > /home/kodi/.config/autostart/kodi.desktop <<KODIEOF
 [Desktop Entry]
 Type=Application
 Name=Kodi
-Exec=$KODI_EXEC
-X-XFCE-Autostart-enabled=true
+Comment=Kodi Media Center
+Exec=/usr/local/bin/kodi-autostart.sh
+Terminal=false
+Hidden=false
+NoDisplay=false
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
 KODIEOF
         chown -R kodi:kodi /home/kodi/.config
-        msg_ok "Set up Kodi autostart"
+        msg_ok "Set up Kodi autostart (with 5s delay for session init)"
     else
         msg_info "Kodi installed but autostart disabled (launch manually from menu)"
     fi
@@ -801,53 +822,19 @@ RAEOF
         chown kodi:kodi /home/kodi/Desktop/RetroArch.desktop
         sudo -u kodi gio set /home/kodi/Desktop/RetroArch.desktop metadata::trusted true 2>/dev/null || true
 
-        # ── Kodi plugin launcher (appears under Add-ons → Programs) ───────────
-        # A minimal Kodi Python addon that launches RetroArch from within Kodi.
-        # When the user selects it, Kodi suspends audio/video, RetroArch takes
-        # over the screen, and when RetroArch exits Kodi resumes.
-        RA_ADDON_DIR="/home/kodi/.kodi/addons/plugin.program.retroarch"
-        mkdir -p "${RA_ADDON_DIR}"
-
-        cat > "${RA_ADDON_DIR}/addon.xml" <<'RAADDONXML'
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.program.retroarch"
-       name="RetroArch"
-       version="1.0.0"
-       provider-name="kodi-lxc">
-    <requires>
-        <import addon="xbmc.python" version="3.0.0"/>
-    </requires>
-    <extension point="xbmc.python.pluginsource" library="default.py">
-        <provides>executable</provides>
-    </extension>
-    <extension point="xbmc.addon.metadata">
-        <summary lang="en_GB">RetroArch multi-system emulator</summary>
-        <description lang="en_GB">Launch RetroArch. Browse your ROM collection and play games with any emulator core.</description>
-        <platform>linux</platform>
-    </extension>
-</addon>
-RAADDONXML
-
-        cat > "${RA_ADDON_DIR}/default.py" <<'RAPLUGIN'
-import subprocess
-import xbmc
-import xbmcgui
-
-# Stop Kodi playback so RetroArch gets exclusive access to audio/video
-xbmc.Player().stop()
-xbmc.sleep(500)
-
-xbmcgui.Dialog().notification(
-    'RetroArch', 'Launching RetroArch...', xbmcgui.NOTIFICATION_INFO, 2000
-)
-xbmc.sleep(800)
-
-# Launch RetroArch and wait for it to exit before returning control to Kodi
-subprocess.call(['retroarch'])
-RAPLUGIN
-
-        chown -R kodi:kodi "${RA_ADDON_DIR}"
-        msg_ok "Created RetroArch Kodi launcher (Add-ons → Programs → RetroArch)"
+        # ── Kodi Favourites entry ─────────────────────────────────────────────
+        # Add RetroArch to Kodi Favourites via a plain XML file.
+        # Using a Python addon would trigger Kodi's "unknown source" approval
+        # dialog on first launch, which hangs the autostart silently.
+        # Favourites.xml is read by Kodi with no prompts and no addon overhead.
+        mkdir -p /home/kodi/.kodi/userdata
+        cat > /home/kodi/.kodi/userdata/favourites.xml <<'RAFAVEOF'
+<favourites>
+    <favourite name="RetroArch" thumb="">RunProgram(retroarch)</favourite>
+</favourites>
+RAFAVEOF
+        chown -R kodi:kodi /home/kodi/.kodi
+        msg_ok "Added RetroArch to Kodi Favourites (Kodi → Favourites → RetroArch)"
     else
         msg_error "RetroArch installation failed"; FAILED_APPS+=("RetroArch")
     fi
@@ -1302,46 +1289,15 @@ RADESKTOP
 chmod +x /home/kodi/Desktop/RetroArch.desktop
 chown kodi:kodi /home/kodi/Desktop/RetroArch.desktop
 
-# Kodi plugin launcher (Add-ons → Programs → RetroArch)
-RA_ADDON_DIR="/home/kodi/.kodi/addons/plugin.program.retroarch"
-mkdir -p "${RA_ADDON_DIR}"
-
-cat > "${RA_ADDON_DIR}/addon.xml" <<'RAADDONXML'
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.program.retroarch"
-       name="RetroArch"
-       version="1.0.0"
-       provider-name="kodi-lxc">
-    <requires>
-        <import addon="xbmc.python" version="3.0.0"/>
-    </requires>
-    <extension point="xbmc.python.pluginsource" library="default.py">
-        <provides>executable</provides>
-    </extension>
-    <extension point="xbmc.addon.metadata">
-        <summary lang="en_GB">RetroArch multi-system emulator</summary>
-        <description lang="en_GB">Launch RetroArch. Browse your ROM collection and play games with any emulator core.</description>
-        <platform>linux</platform>
-    </extension>
-</addon>
-RAADDONXML
-
-cat > "${RA_ADDON_DIR}/default.py" <<'RAPLUGIN'
-import subprocess
-import xbmc
-import xbmcgui
-
-xbmc.Player().stop()
-xbmc.sleep(500)
-xbmcgui.Dialog().notification(
-    'RetroArch', 'Launching RetroArch...', xbmcgui.NOTIFICATION_INFO, 2000
-)
-xbmc.sleep(800)
-subprocess.call(['retroarch'])
-RAPLUGIN
-
-chown -R kodi:kodi "${RA_ADDON_DIR}"
-echo "  ✓ RetroArch Kodi launcher created (Add-ons → Programs → RetroArch)"
+# Kodi Favourites entry (same approach as main install)
+mkdir -p /home/kodi/.kodi/userdata
+cat > /home/kodi/.kodi/userdata/favourites.xml <<'RAFAVEOF'
+<favourites>
+    <favourite name="RetroArch" thumb="">RunProgram(retroarch)</favourite>
+</favourites>
+RAFAVEOF
+chown -R kodi:kodi /home/kodi/.kodi
+echo "  ✓ RetroArch added to Kodi Favourites (Kodi → Favourites → RetroArch)"
 echo ""
 echo "Installation complete!"
 echo "  • ROMs directory: ~/ROMs"
