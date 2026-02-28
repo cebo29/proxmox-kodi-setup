@@ -81,7 +81,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     xfce4 xfce4-goodies xfce4-terminal openbox matchbox-window-manager \
     xorg xserver-xorg-video-intel \
     xserver-xorg-input-evdev \
-    zenity xterm whiptail x11-utils \
+    zenity xterm whiptail x11-utils xdotool \
     pulseaudio pulseaudio-utils pavucontrol alsa-utils \
     software-properties-common curl wget \
     &>/dev/null
@@ -685,7 +685,14 @@ if [ ! -f "$BOOT_FLAG" ]; then
     touch "$BOOT_FLAG" 2>/dev/null || true
 fi
 
-# Start Steam silently in background at session start for updates/friends
+# Start matchbox-window-manager once for the whole session.
+# Keeps X input focus working at all times — zenity, Steam BPM, and Kodi
+# all get proper keyboard/mouse focus. Without a WM, windows opened after
+# another app closes get no input focus (black screen, mouse moves but no input).
+# When XFCE is selected, xfwm4 starts and takes over from matchbox automatically.
+matchbox-window-manager -use_titlebar no &>/dev/null &
+
+# Start Steam silently in background for updates/friends
 maybe_start_steam_silent
 
 while true; do
@@ -728,33 +735,22 @@ while true; do
                 eval "$CMD" 2>/dev/null || true
             fi
 
-            # Kill any silently-running Steam first.
-            # If we don't, the pgrep wait below would spin forever because the
-            # silent Steam stays alive even after the user exits Big Picture.
+            # Kill silent Steam — launch fresh in BPM so it exits cleanly on quit.
             pkill -x steam 2>/dev/null; sleep 2
-
-            # matchbox-window-manager: minimal kiosk WM with no mouse bindings.
-            # openbox grabs the mouse pointer for its Alt+click/drag bindings, which
-            # causes SDL's XGrabPointer to return AlreadyGrabbed — breaking BPM input.
-            matchbox-window-manager -use_titlebar no &>/dev/null &
-            WMPID=$!
-            sleep 1
 
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
-
-            # Launch fresh — Steam exits cleanly when the user leaves BPM.
             $STEAM_BIN -gamepadui -fulldesktopres
 
-            # Kill matchbox by name — more reliable than PID alone.
-            pkill -x matchbox-window-manager 2>/dev/null || true
-            wait "$WMPID" 2>/dev/null || true
-
-            # Restore display state — xrandr --off on disconnected outputs persists
-            # after Steam exits and can cause the next launched app to flash/die.
+            # Steam BPM leaves the display in a black compositor state on exit.
+            # xrandr --auto resets the output, xsetroot repaints the background,
+            # and the sleep lets X finish flushing before zenity tries to render.
             xrandr --auto 2>/dev/null || true
+            sleep 1
+            xsetroot -solid black 2>/dev/null || true
+            sleep 1
 
-            # Restart silently so updates/friends continue in background.
+            # Restart Steam silently in background.
             maybe_start_steam_silent
             ;;
         "Desktop")
