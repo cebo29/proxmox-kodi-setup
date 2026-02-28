@@ -685,13 +685,6 @@ if [ ! -f "$BOOT_FLAG" ]; then
     touch "$BOOT_FLAG" 2>/dev/null || true
 fi
 
-# Start matchbox-window-manager once for the whole session.
-# Keeps X input focus working at all times — zenity, Steam BPM, and Kodi
-# all get proper keyboard/mouse focus. Without a WM, windows opened after
-# another app closes get no input focus (black screen, mouse moves but no input).
-# When XFCE is selected, xfwm4 starts and takes over from matchbox automatically.
-matchbox-window-manager -use_titlebar no &>/dev/null &
-
 while true; do
     DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
 
@@ -720,36 +713,41 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            # Setting the connected output as primary is enough for Steam to render
-            # at the correct resolution. Turning off disconnected outputs with --off
-            # causes Steam's compositor to lose its render target — black screen on launch.
             CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
             [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
 
-            # Kill silent Steam — launch fresh in BPM so it exits cleanly on quit.
-            pkill -x steam 2>/dev/null; sleep 2
+            # Kill any running Steam and wait for it to fully exit before relaunching.
+            pkill -x steam 2>/dev/null
+            WAIT=0
+            while pgrep -x steam &>/dev/null && [ $WAIT -lt 15 ]; do
+                sleep 1; WAIT=$(( WAIT + 1 ))
+            done
+
+            # matchbox only during Steam BPM — gives Steam a WM to go fullscreen.
+            # Not run globally because it conflicts with xfwm4 in XFCE.
+            matchbox-window-manager -use_titlebar no &>/dev/null &
+            WMPID=$!
+            sleep 1
 
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
             $STEAM_BIN -gamepadui -fulldesktopres
 
-            # Steam BPM leaves the display in a black compositor state on exit.
-            # xsetroot repaints the background so zenity renders visibly.
+            pkill -x matchbox-window-manager 2>/dev/null || true
+            wait "$WMPID" 2>/dev/null || true
+
+            # Steam BPM leaves display in black compositor state — repaint before menu.
             sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
             ;;
         "Desktop")
-            # Kill matchbox before XFCE — matchbox reserves a left-edge strut that
-            # xfwm4 respects, leaving a gap. xfwm4 takes full ownership once matchbox is gone.
-            pkill -x matchbox-window-manager 2>/dev/null || true
-            sleep 1
-            # Start Steam silently only in desktop session where it makes sense.
+            # startxfce4 brings its own xfwm4 — no matchbox needed or wanted.
+            # Steam runs silently in desktop session for updates/friends.
             maybe_start_steam_silent
             startxfce4
-            # Restart matchbox when user exits XFCE so menu gets focus back.
-            matchbox-window-manager -use_titlebar no &>/dev/null &
-            sleep 1
+            # Kill silent Steam when user exits desktop.
+            pkill -x steam 2>/dev/null || true
             ;;
         "Configure Audio")
             /usr/local/bin/configure-audio.sh
