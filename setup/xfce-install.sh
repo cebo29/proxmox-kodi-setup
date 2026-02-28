@@ -723,14 +723,10 @@ while true; do
             CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
             [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
 
-            # Kill silent Steam — launch fresh so it exits cleanly on quit.
-            pkill -x steam 2>/dev/null; sleep 2
-
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
-            $STEAM_BIN -gamepadui -fulldesktopres
+            $STEAM_BIN steam://open/bigpicture
 
-            # Repaint root window — Steam BPM leaves display black on exit.
             sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
@@ -842,13 +838,23 @@ EOF
 fi
 
 if [ "$STEAM_INSTALLED" = true ]; then
+    cat > /usr/local/bin/steam-bpm.sh <<'EOF'
+#!/usr/bin/env bash
+export DISPLAY="${DISPLAY:-:0}"
+# Set connected output as primary so Steam renders at correct resolution.
+CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
+[ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
+steam steam://open/bigpicture
+EOF
+    chmod +x /usr/local/bin/steam-bpm.sh
+
     cat > /home/kodi/Desktop/steam-bigpicture.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Steam Big Picture
 Comment=Launch Steam in Big Picture mode
-Exec=steam -gamepadui -fulldesktopres
+Exec=/usr/local/bin/steam-bpm.sh
 Icon=steam
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
