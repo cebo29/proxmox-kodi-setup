@@ -78,7 +78,7 @@ msg_ok "System updated"
 
 msg_info "Installing XFCE and base X packages"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    xfce4 xfce4-goodies xfce4-terminal openbox \
+    xfce4 xfce4-goodies xfce4-terminal openbox matchbox-window-manager \
     xorg xserver-xorg-video-intel \
     xserver-xorg-input-evdev \
     zenity xterm whiptail x11-utils \
@@ -733,9 +733,11 @@ while true; do
             # silent Steam stays alive even after the user exits Big Picture.
             pkill -x steam 2>/dev/null; sleep 2
 
-            # openbox gives Steam a WM so it can go fullscreen on a bare X session.
-            openbox --sm-disable &>/dev/null &
-            OBPID=$!
+            # matchbox-window-manager: minimal kiosk WM with no mouse bindings.
+            # openbox grabs the mouse pointer for its Alt+click/drag bindings, which
+            # causes SDL's XGrabPointer to return AlreadyGrabbed — breaking BPM input.
+            matchbox-window-manager -use_titlebar no &>/dev/null &
+            WMPID=$!
             sleep 1
 
             STEAM_BIN="steam"
@@ -744,9 +746,9 @@ while true; do
             # Launch fresh — Steam exits cleanly when the user leaves BPM.
             $STEAM_BIN -gamepadui -fulldesktopres
 
-            # Kill openbox by name — PID-based kill can miss if it respawned.
-            pkill -x openbox 2>/dev/null || true
-            wait "$OBPID" 2>/dev/null || true
+            # Kill matchbox by name — more reliable than PID alone.
+            pkill -x matchbox-window-manager 2>/dev/null || true
+            wait "$WMPID" 2>/dev/null || true
 
             # Restore display state — xrandr --off on disconnected outputs persists
             # after Steam exits and can cause the next launched app to flash/die.
