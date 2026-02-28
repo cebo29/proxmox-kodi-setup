@@ -467,7 +467,7 @@ export PCT_OPTIONS="
   -features $FEATURES
   -hostname $HN
   -net0 name=eth0,bridge=$BRG$MAC,ip=$NET$GATE$VLAN
-  -onboot 1
+  -onboot 0
   -cores $CORE_COUNT
   -memory $RAM_SIZE
   -unprivileged $CT_TYPE
