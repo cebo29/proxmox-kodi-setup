@@ -78,7 +78,7 @@ msg_ok "System updated"
 
 msg_info "Installing XFCE and base X packages"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    xfce4 xfce4-goodies xfce4-terminal openbox matchbox-window-manager \
+    xfce4 xfce4-goodies xfce4-terminal openbox \
     xorg xserver-xorg-video-intel \
     xserver-xorg-input-evdev \
     zenity xterm whiptail x11-utils xdotool \
@@ -685,6 +685,13 @@ if [ ! -f "$BOOT_FLAG" ]; then
     touch "$BOOT_FLAG" 2>/dev/null || true
 fi
 
+# xfwm4 as persistent WM for the whole session.
+# - Gives zenity proper input focus so keyboard/mouse always works
+# - No strut/gap (unlike matchbox)
+# - When XFCE is selected, startxfce4 finds xfwm4 already running — no flicker
+# - Steam BPM is fullscreen so xfwm4 stays out of the way entirely
+xfwm4 --sm-disable &>/dev/null &
+
 while true; do
     DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
 
@@ -713,43 +720,23 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            pkill -x matchbox-window-manager 2>/dev/null || true
             CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
             [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
 
-            # Kill any running Steam and wait for it to fully exit before relaunching.
-            pkill -x steam 2>/dev/null
-            WAIT=0
-            while pgrep -x steam &>/dev/null && [ $WAIT -lt 15 ]; do
-                sleep 1; WAIT=$(( WAIT + 1 ))
-            done
-
-            # Start matchbox so Steam opens fullscreen (bare X = tiny window).
-            # Kill it once Steam is running — matchbox grabs the mouse pointer which
-            # breaks Steam BPM input. Steam retains its fullscreen state after WM exits.
-            matchbox-window-manager -use_titlebar no &>/dev/null &
-            sleep 2
+            # Kill silent Steam — launch fresh so it exits cleanly on quit.
+            pkill -x steam 2>/dev/null; sleep 2
 
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
-            $STEAM_BIN -gamepadui -fulldesktopres &
-            STEAMPID=$!
-
-            # Wait for Steam window to appear, then drop matchbox.
-            sleep 5
-            pkill -x matchbox-window-manager 2>/dev/null || true
-
-            # Now wait for Steam to fully exit.
-            wait "$STEAMPID" 2>/dev/null || true
+            $STEAM_BIN -gamepadui -fulldesktopres
 
             # Repaint root window — Steam BPM leaves display black on exit.
+            sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
             ;;
         "Desktop")
-            # Kill matchbox if running from a previous Steam BPM exit.
-            pkill -x matchbox-window-manager 2>/dev/null || true
-            # startxfce4 brings its own xfwm4 — no matchbox needed or wanted.
+            # xfwm4 is already running — startxfce4 finds it and continues seamlessly.
             # Steam runs silently in desktop session for updates/friends.
             maybe_start_steam_silent
             startxfce4
