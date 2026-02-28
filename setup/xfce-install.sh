@@ -744,7 +744,13 @@ while true; do
             # Launch fresh — Steam exits cleanly when the user leaves BPM.
             $STEAM_BIN -gamepadui -fulldesktopres
 
-            kill "$OBPID" 2>/dev/null || true
+            # Kill openbox by name — PID-based kill can miss if it respawned.
+            pkill -x openbox 2>/dev/null || true
+            wait "$OBPID" 2>/dev/null || true
+
+            # Restore display state — xrandr --off on disconnected outputs persists
+            # after Steam exits and can cause the next launched app to flash/die.
+            xrandr --auto 2>/dev/null || true
 
             # Restart silently so updates/friends continue in background.
             maybe_start_steam_silent
