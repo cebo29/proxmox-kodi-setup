@@ -692,9 +692,6 @@ fi
 # When XFCE is selected, xfwm4 starts and takes over from matchbox automatically.
 matchbox-window-manager -use_titlebar no &>/dev/null &
 
-# Start Steam silently in background for updates/friends
-maybe_start_steam_silent
-
 while true; do
     DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
 
@@ -716,12 +713,10 @@ while true; do
 
     case "$CHOICE" in
         "Kodi")
-            maybe_start_steam_silent
             if command -v kodi &>/dev/null; then kodi
             else flatpak run tv.kodi.Kodi; fi
             ;;
         "RetroArch")
-            maybe_start_steam_silent
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
@@ -743,15 +738,18 @@ while true; do
             sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
-
-            # Restart Steam silently in background.
-            maybe_start_steam_silent
             ;;
         "Desktop")
-            # Run XFCE as a child process — session-manager stays alive underneath.
-            # When the user exits XFCE, the while loop resumes and shows the menu.
-            # (exec would replace this process, causing a full lightdm logout loop.)
+            # Kill matchbox before XFCE — matchbox reserves a left-edge strut that
+            # xfwm4 respects, leaving a gap. xfwm4 takes full ownership once matchbox is gone.
+            pkill -x matchbox-window-manager 2>/dev/null || true
+            sleep 1
+            # Start Steam silently only in desktop session where it makes sense.
+            maybe_start_steam_silent
             startxfce4
+            # Restart matchbox when user exits XFCE so menu gets focus back.
+            matchbox-window-manager -use_titlebar no &>/dev/null &
+            sleep 1
             ;;
         "Configure Audio")
             /usr/local/bin/configure-audio.sh
