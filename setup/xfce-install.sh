@@ -725,15 +725,11 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            # Set the real connected output as primary, turn off disconnected ones.
+            # Setting the connected output as primary is enough for Steam to render
+            # at the correct resolution. Turning off disconnected outputs with --off
+            # causes Steam's compositor to lose its render target — black screen on launch.
             CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
-            if [ -n "$CONNECTED" ]; then
-                CMD="xrandr --output $CONNECTED --primary"
-                while IFS= read -r disc; do
-                    CMD="$CMD --output $disc --off"
-                done < <(xrandr 2>/dev/null | awk '$2 == "disconnected" {print $1}')
-                eval "$CMD" 2>/dev/null || true
-            fi
+            [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
 
             # Kill silent Steam — launch fresh in BPM so it exits cleanly on quit.
             pkill -x steam 2>/dev/null; sleep 2
@@ -743,9 +739,7 @@ while true; do
             $STEAM_BIN -gamepadui -fulldesktopres
 
             # Steam BPM leaves the display in a black compositor state on exit.
-            # xrandr --auto resets the output, xsetroot repaints the background,
-            # and the sleep lets X finish flushing before zenity tries to render.
-            xrandr --auto 2>/dev/null || true
+            # xsetroot repaints the background so zenity renders visibly.
             sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
