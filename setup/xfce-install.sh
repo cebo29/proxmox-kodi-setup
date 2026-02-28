@@ -718,7 +718,7 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            # Set the real connected output as primary, turn off phantom disconnected ones.
+            # Set the real connected output as primary, turn off disconnected ones.
             CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
             if [ -n "$CONNECTED" ]; then
                 CMD="xrandr --output $CONNECTED --primary"
@@ -728,8 +728,12 @@ while true; do
                 eval "$CMD" 2>/dev/null || true
             fi
 
-            # openbox is installed with XFCE and gives Steam a WM to go fullscreen.
-            # Without a WM on a bare X session, Steam opens as a tiny floating window.
+            # Kill any silently-running Steam first.
+            # If we don't, the pgrep wait below would spin forever because the
+            # silent Steam stays alive even after the user exits Big Picture.
+            pkill -x steam 2>/dev/null; sleep 2
+
+            # openbox gives Steam a WM so it can go fullscreen on a bare X session.
             openbox --sm-disable &>/dev/null &
             OBPID=$!
             sleep 1
@@ -737,17 +741,13 @@ while true; do
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
 
-            if pgrep -x steam &>/dev/null; then
-                # Already running silently — use URL protocol to switch to Big Picture.
-                # -gamepadui on an already-running instance just opens a normal window.
-                $STEAM_BIN "steam://open/bigpicture"
-            else
-                $STEAM_BIN -gamepadui -fulldesktopres
-            fi
+            # Launch fresh — Steam exits cleanly when the user leaves BPM.
+            $STEAM_BIN -gamepadui -fulldesktopres
 
-            # Wait for Steam to exit before killing openbox and returning to menu
-            while pgrep -x steam &>/dev/null; do sleep 2; done
             kill "$OBPID" 2>/dev/null || true
+
+            # Restart silently so updates/friends continue in background.
+            maybe_start_steam_silent
             ;;
         "Desktop")
             # Run XFCE as a child process — session-manager stays alive underneath.
@@ -1183,7 +1183,4 @@ if [ "$SKIP_AUDIO" = false ]; then
 else
     echo -e "\n${BL}Audio:${CL} not configured — use ${GN}Configure Audio${CL} from session menu"
 fi
-
 echo ""
-
-exit 0
