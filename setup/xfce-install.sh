@@ -81,7 +81,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     xfce4 xfce4-goodies xfce4-terminal \
     xorg xserver-xorg-video-intel \
     xserver-xorg-input-evdev \
-    zenity \
+    zenity xterm whiptail x11-utils \
     pulseaudio pulseaudio-utils pavucontrol alsa-utils \
     software-properties-common curl wget \
     &>/dev/null
@@ -305,25 +305,49 @@ chmod +x /usr/local/bin/configure-audio.sh
 msg_ok "Configure Audio tool installed"
 
 # ─────────────────────────────────────────────
-# RETROARCH
+# RETROARCH — installed from libretro's official buildbot
+# The PPA build has the online core downloader compiled out.
+# The buildbot binary is the full build with online updater intact.
+# AppImage is extracted (no FUSE needed) to /opt/retroarch-bin.
 # ─────────────────────────────────────────────
 RETROARCH_INSTALLED=false
 if [[ "${INSTALL_RETROARCH}" =~ ^[Yy] ]]; then
-    msg_info "Adding Libretro stable PPA"
-    add-apt-repository -y ppa:libretro/stable &>/dev/null
-    apt-get update -qq &>/dev/null
-    msg_ok "Libretro PPA added"
+    msg_info "Installing RetroArch dependencies"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        libgl1 libgles2 libegl1 \
+        libsdl2-2.0-0 libavcodec58 libavformat58 libswscale5 \
+        libfreetype6 libasound2 curl fuse &>/dev/null
+    msg_ok "RetroArch dependencies installed"
 
-    msg_info "Installing RetroArch"
-    if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq retroarch retroarch-assets 2>/dev/null; then
-        if command -v retroarch &>/dev/null; then
+    msg_info "Fetching latest RetroArch nightly build"
+    BUILDBOT_BASE="https://buildbot.libretro.com/nightly/linux/x86_64/latest"
+    APPIMAGE=$(curl -s "${BUILDBOT_BASE}/" \
+        | grep -oP 'RetroArch[^"]+\.AppImage' | head -1)
+
+    if [ -z "$APPIMAGE" ]; then
+        msg_error "Could not determine AppImage filename — falling back to Flatpak"
+    else
+        wget -q "${BUILDBOT_BASE}/${APPIMAGE}" -O /opt/RetroArch.AppImage 2>/dev/null
+        if [ -s /opt/RetroArch.AppImage ]; then
+            chmod +x /opt/RetroArch.AppImage
+            msg_ok "Downloaded: $APPIMAGE"
+
+            # /dev/fuse is passed through by kodi-v1.sh so AppImage runs directly
+            cat > /usr/local/bin/retroarch <<'EOF'
+#!/usr/bin/env bash
+exec /opt/RetroArch.AppImage "$@"
+EOF
+            chmod +x /usr/local/bin/retroarch
             RETROARCH_INSTALLED=true
-            msg_ok "RetroArch installed via PPA"
+            msg_ok "RetroArch installed from buildbot (online updater enabled)"
+        else
+            msg_error "Download failed — falling back to Flatpak"
+            rm -f /opt/RetroArch.AppImage
         fi
     fi
 
+    # Flatpak fallback if buildbot download fails
     if [ "$RETROARCH_INSTALLED" = false ]; then
-        msg_error "PPA install failed — trying Flatpak fallback"
         apt-get install -y -qq flatpak &>/dev/null
         flatpak remote-add --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
@@ -334,61 +358,28 @@ if [[ "${INSTALL_RETROARCH}" =~ ^[Yy] ]]; then
 exec flatpak run org.libretro.RetroArch "$@"
 EOF
             chmod +x /usr/local/bin/retroarch
-            msg_ok "RetroArch installed via Flatpak (fallback)"
+            msg_ok "RetroArch installed via Flatpak (fallback — online updater enabled)"
         else
-            msg_error "RetroArch installation failed — skipping"
+            msg_error "RetroArch installation failed"
         fi
     fi
 
-    # Install all available cores from the PPA dynamically
-    # NOTE: PPA install disables RetroArch's built-in Core Downloader,
-    # so cores MUST come from apt. We discover every libretro-* package
-    # available and install them all. Individual failures are non-fatal.
+    # Minimal retroarch.cfg — online updater manages all paths itself
     if [ "$RETROARCH_INSTALLED" = true ]; then
-        # ── Install all available cores from PPA ──────────────────────────────
-        # PPA installs disable RetroArch's built-in Core Downloader, so cores
-        # MUST come from apt. Dynamically discover every libretro-* package.
-        msg_info "Discovering available RetroArch cores"
-        CORE_PKGS=$(apt-cache search --names-only '^libretro-' 2>/dev/null | awk '{print $1}' | grep -v '^retroarch')
-        if [ -n "$CORE_PKGS" ]; then
-            CORE_COUNT=$(echo "$CORE_PKGS" | wc -l)
-            msg_ok "Found $CORE_COUNT core packages — installing"
-            msg_info "Installing RetroArch cores (this may take a minute)"
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-                --ignore-missing $CORE_PKGS &>/dev/null || true
-            INSTALLED_COUNT=$(dpkg -l 'libretro-*' 2>/dev/null | grep '^ii' | wc -l)
-            msg_ok "Installed $INSTALLED_COUNT RetroArch cores"
-        else
-            msg_error "No libretro-* packages found in PPA — try adding ppa:libretro/testing for more cores"
-        fi
-
-        # ── Configure RetroArch defaults ──────────────────────────────────────
         msg_info "Configuring RetroArch defaults"
         RETROARCH_CFG_DIR="/home/kodi/.config/retroarch"
         mkdir -p "$RETROARCH_CFG_DIR"
         cat > "$RETROARCH_CFG_DIR/retroarch.cfg" <<'EOF'
-# RetroArch defaults for kodi-session
-
-# Always start fullscreen
+# RetroArch defaults — paths are managed by the Online Updater
 video_fullscreen = "true"
 video_windowed_fullscreen = "false"
-
-# System asset paths (installed by retroarch-assets package)
-assets_directory = "/usr/share/retroarch-assets"
-libretro_info_path = "/usr/share/libretro/info"
-libretro_directory = "/usr/lib/libretro"
-
-# Sane performance defaults
 video_threaded = "true"
-video_smooth = "false"
 audio_sync = "true"
-
-# Quit with Esc, toggle menu with F1
 input_exit_emulator = escape
 input_menu_toggle = f1
 EOF
         chown -R kodi:kodi "$RETROARCH_CFG_DIR"
-        msg_ok "RetroArch configured (fullscreen, core path set)"
+        msg_ok "RetroArch configured (use Online Updater → Core Downloader for cores)"
     fi
 fi
 
@@ -491,46 +482,31 @@ fi
 # ─────────────────────────────────────────────
 msg_info "Installing Session Manager"
 
+# ── Outer X session loop ──────────────────────────────────────────────────────
+# This script IS the X session (called by kodi-session.desktop via lightdm).
+# It sets up xterm with a scaled font and loops: show menu → launch app → repeat.
+# All UI happens inside xterm running session-menu.sh (whiptail, ncurses-style).
 cat > /usr/local/bin/session-manager.sh <<'SESSIONEOF'
 #!/usr/bin/env bash
-# ─────────────────────────────────────────────────────────────────────────────
-# Session Manager
-# Runs as the entire X session (via kodi-session.desktop).
-# No desktop environment is loaded until the user explicitly chooses Desktop.
-# ─────────────────────────────────────────────────────────────────────────────
-
 export DISPLAY="${DISPLAY:-:0}"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 
 CONFIG_DIR="$HOME/.config/kodi-session"
 CONFIG_FILE="$CONFIG_DIR/default"
-COUNTDOWN_SECS=5
-
 mkdir -p "$CONFIG_DIR"
 
-# Black background — nothing visible except our dialog
 xsetroot -solid black 2>/dev/null || true
 
-# ── Detect screen resolution for fullscreen-sized dialogs ────────────────────
-# Falls back to 1920x1080 if xdpyinfo is unavailable
-SCREEN_W=$(xdpyinfo 2>/dev/null | grep -m1 dimensions | awk '{print $2}' | cut -dx -f1)
+# Scale font size to screen height (~1pt per 40px, min 12)
 SCREEN_H=$(xdpyinfo 2>/dev/null | grep -m1 dimensions | awk '{print $2}' | cut -dx -f2)
-SCREEN_W=${SCREEN_W:-1920}
 SCREEN_H=${SCREEN_H:-1080}
+FONT_SIZE=$(( SCREEN_H / 40 ))
+[ "$FONT_SIZE" -lt 12 ] && FONT_SIZE=12
 
-# ── Detect installed apps ────────────────────
-detect_apps() {
-    HAVE_KODI=false
-    HAVE_RETROARCH=false
-    HAVE_STEAM=false
-    ( command -v kodi &>/dev/null || \
-      flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi" ) && HAVE_KODI=true
-    command -v retroarch &>/dev/null && HAVE_RETROARCH=true
-    ( command -v steam &>/dev/null || [ -f /usr/games/steam ] ) && HAVE_STEAM=true
-}
+# Detect Steam for silent background updates
+HAVE_STEAM=false
+( command -v steam &>/dev/null || [ -f /usr/games/steam ] ) && HAVE_STEAM=true
 
-# ── Start Steam silently for background updates ──────────────────────────────
-# Only if Steam is installed and not already running. Uses -silent (no window).
 maybe_start_steam_silent() {
     $HAVE_STEAM || return 0
     pgrep -x steam &>/dev/null && return 0
@@ -541,185 +517,250 @@ maybe_start_steam_silent() {
     fi
 }
 
-# ── Build zenity menu rows ───────────────────
-build_menu_rows() {
-    MENU_ROWS=()
-    detect_apps
-    $HAVE_KODI      && MENU_ROWS+=("Kodi"              "Media center (fullscreen)")
-    $HAVE_RETROARCH && MENU_ROWS+=("RetroArch"         "Emulation frontend (fullscreen)")
-    $HAVE_STEAM     && MENU_ROWS+=("Steam Big Picture" "Gaming — Big Picture mode (fullscreen)")
-    MENU_ROWS+=("─────────────────────" "")
-    MENU_ROWS+=("Desktop"              "Load XFCE desktop environment")
-    MENU_ROWS+=("─────────────────────" "")
-    MENU_ROWS+=("Configure Audio"      "Set up audio output device")
-    MENU_ROWS+=("Change Default"       "Choose which app launches on boot")
-    MENU_ROWS+=("─────────────────────" "")
-    MENU_ROWS+=("Restart"              "Restart the system")
-    MENU_ROWS+=("Shutdown"             "Shut down the system")
+FIRST_RUN=true
+
+while true; do
+    CHOICE_FILE=$(mktemp /tmp/session-choice.XXXXXX)
+
+    xterm -fullscreen \
+          -fa 'Monospace' -fs "$FONT_SIZE" \
+          -fg white -bg black \
+          -title "Session Manager" \
+          -e /usr/local/bin/session-menu.sh "$FIRST_RUN" "$CHOICE_FILE"
+
+    FIRST_RUN=false
+    CHOICE=$(cat "$CHOICE_FILE" 2>/dev/null)
+    rm -f "$CHOICE_FILE"
+
+    xsetroot -solid black 2>/dev/null || true
+
+    case "$CHOICE" in
+        "Kodi")
+            maybe_start_steam_silent
+            if command -v kodi &>/dev/null; then kodi
+            else flatpak run tv.kodi.Kodi; fi
+            ;;
+        "RetroArch")
+            maybe_start_steam_silent
+            retroarch --fullscreen
+            ;;
+        "Steam Big Picture")
+            xrandr --auto 2>/dev/null || true
+            if command -v steam &>/dev/null; then steam -gamepadui -fulldesktopres
+            elif [ -f /usr/games/steam ]; then /usr/games/steam -gamepadui -fulldesktopres; fi
+            ;;
+        "Desktop")
+            exec startxfce4
+            ;;
+        "Shutdown")
+            systemctl poweroff
+            ;;
+        "Restart")
+            systemctl reboot
+            ;;
+        # Empty / ESC / unknown → loop back to menu
+    esac
+
+    xsetroot -solid black 2>/dev/null || true
+done
+SESSIONEOF
+chmod +x /usr/local/bin/session-manager.sh
+
+# ── Inner menu script (runs inside xterm, whiptail UI) ───────────────────────
+# Handles countdown, menu display, Configure Audio, and Change Default.
+# Writes the user's choice to CHOICE_FILE then exits so the outer loop acts.
+cat > /usr/local/bin/session-menu.sh <<'MENUEOF'
+#!/usr/bin/env bash
+FIRST_RUN="$1"
+CHOICE_FILE="$2"
+COUNTDOWN_SECS=5
+
+CONFIG_DIR="$HOME/.config/kodi-session"
+CONFIG_FILE="$CONFIG_DIR/default"
+mkdir -p "$CONFIG_DIR"
+
+# ── Detect installed apps ─────────────────────────────────────────────────────
+detect_apps() {
+    HAVE_KODI=false; HAVE_RETROARCH=false; HAVE_STEAM=false
+    ( command -v kodi &>/dev/null || \
+      flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi" ) && HAVE_KODI=true
+    command -v retroarch &>/dev/null && HAVE_RETROARCH=true
+    ( command -v steam &>/dev/null || [ -f /usr/games/steam ] ) && HAVE_STEAM=true
 }
 
-# ── 5-second countdown before auto-launching default ────────────────────────
-# Returns 0 = timed out (launch it), 1 = cancelled (show menu)
+# ── Countdown (terminal style, any key cancels) ───────────────────────────────
 show_countdown() {
     local label="$1"
-    (
-        for i in $(seq "$COUNTDOWN_SECS" -1 1); do
-            echo $(( 100 - (i * 100 / COUNTDOWN_SECS) ))
-            echo "# Launching $label in $i second(s)...
-
-Press Cancel to open the session menu."
-            sleep 1
-        done
-        echo "100"
-    ) | zenity --progress \
-            --title="Session Manager" \
-            --text="Preparing $label..." \
-            --width="$SCREEN_W" \
-            --auto-close \
-            2>/dev/null
-    return $?
+    for i in $(seq "$COUNTDOWN_SECS" -1 1); do
+        clear
+        echo ""
+        echo ""
+        printf "  %-20s %s\n" "Launching:" "$label"
+        echo ""
+        printf "  %-20s %s\n" "Starting in:" "$i second(s)..."
+        echo ""
+        echo "  Press any key to open the session menu instead."
+        echo ""
+        if read -t 1 -n 1 -s; then
+            return 1  # key pressed — cancelled
+        fi
+    done
+    return 0  # timed out — launch
 }
 
-# ── Session selection menu ───────────────────
-show_menu() {
-    build_menu_rows
-    local default_label
-    default_label=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
-    local subtitle
-    [ -n "$default_label" ] \
-        && subtitle="\nBoot default: <b>$default_label</b>" \
-        || subtitle="\nNo boot default set."
-
-    zenity --list \
-        --title="Session Manager" \
-        --text="Welcome! What would you like to do?$subtitle" \
-        --column="Session" --column="Description" \
-        --width="$SCREEN_W" --height="$SCREEN_H" \
-        --hide-column=0 --print-column=1 \
-        "${MENU_ROWS[@]}" \
-        2>/dev/null
-}
-
-# ── Change boot default ──────────────────────
+# ── Change boot default ───────────────────────────────────────────────────────
 change_default() {
     detect_apps
     local opts=()
     $HAVE_KODI      && opts+=("Kodi"              "Launch Kodi on boot")
     $HAVE_RETROARCH && opts+=("RetroArch"         "Launch RetroArch on boot")
     $HAVE_STEAM     && opts+=("Steam Big Picture" "Launch Steam Big Picture on boot")
-    opts+=("Desktop" "Load XFCE desktop on boot")
+    opts+=("Desktop" "Show session menu on boot (no auto-launch)")
 
     local chosen
-    chosen=$(zenity --list \
-        --title="Change Boot Default" \
-        --text="Which session starts automatically on boot?" \
-        --column="Session" --column="Description" \
-        --width="$SCREEN_W" --height="$SCREEN_H" \
-        --hide-column=0 --print-column=1 \
-        "${opts[@]}" 2>/dev/null)
-    [ -z "$chosen" ] && return
+    chosen=$(whiptail --title "Change Boot Default" \
+        --menu "Which session launches automatically on boot?" \
+        $LINES $COLUMNS $(( ${#opts[@]} / 2 )) \
+        "${opts[@]}" \
+        3>&1 1>&2 2>&3)
+    [ $? -ne 0 ] || [ -z "$chosen" ] && return
 
     if [ "$chosen" = "Desktop" ]; then
         rm -f "$CONFIG_FILE"
-        zenity --info --title="Default Cleared" \
-            --text="Boot default cleared.\nSession menu will appear on next start." \
-            --width=360 2>/dev/null
+        whiptail --title "Done" \
+            --msgbox "Boot default cleared.\nSession menu will appear on next boot." \
+            8 50
     else
         echo "$chosen" > "$CONFIG_FILE"
-        zenity --info --title="Default Saved" \
-            --text="Boot default set to: <b>$chosen</b>\n\nTakes effect on next boot." \
-            --width=360 2>/dev/null
+        whiptail --title "Done" \
+            --msgbox "Boot default set to: $chosen\n\nTakes effect on next boot." \
+            8 50
     fi
 }
 
-# ── Launch an app fullscreen ─────────────────
-launch_app() {
-    case "$1" in
-        "Kodi")
-            # Kodi is fullscreen by default
-            if command -v kodi &>/dev/null; then
-                kodi
-            else
-                flatpak run tv.kodi.Kodi
-            fi
-            ;;
-        "RetroArch")
-            # --fullscreen flag + retroarch.cfg also sets video_fullscreen=true
-            retroarch --fullscreen
-            ;;
-        "Steam Big Picture")
-            # -gamepadui = Big Picture mode, -fulldesktopres forces full resolution
-            # xrandr nudge ensures X reports correct resolution to Steam
-            xrandr --auto 2>/dev/null || true
-            if command -v steam &>/dev/null; then
-                steam -gamepadui -fulldesktopres
-            elif [ -f /usr/games/steam ]; then
-                /usr/games/steam -gamepadui -fulldesktopres
-            fi
-            ;;
-    esac
-    # After any app exits, restore black background before showing menu again
-    xsetroot -solid black 2>/dev/null || true
+# ── Configure Audio (TUI version for use inside the terminal session) ─────────
+configure_audio_tui() {
+    mapfile -t DEVICES      < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | \
+        sed 's/card \([0-9]\+\):.*device \([0-9]\+\):.*/\1,\2/')
+    mapfile -t DEVICE_NAMES < <(aplay -l 2>/dev/null | grep -E "^card [0-9]+" | \
+        sed 's/card [0-9]\+: \(.*\), device [0-9]\+: \(.*\) \[.*/\1 - \2/')
+
+    if [ ${#DEVICES[@]} -eq 0 ]; then
+        whiptail --title "No Devices" \
+            --msgbox "No audio devices detected.\nMake sure /dev/snd is passed through." \
+            8 52
+        return
+    fi
+
+    local opts=()
+    for i in "${!DEVICES[@]}"; do
+        IFS=',' read -r C D <<< "${DEVICES[$i]}"
+        opts+=("hw:${C},${D}" "${DEVICE_NAMES[$i]}")
+    done
+
+    local selected
+    selected=$(whiptail --title "Select Audio Device" \
+        --menu "Choose your audio output device:" \
+        $LINES $COLUMNS ${#DEVICES[@]} \
+        "${opts[@]}" \
+        3>&1 1>&2 2>&3)
+    [ $? -ne 0 ] || [ -z "$selected" ] && return
+
+    local SEL_CARD SEL_DEV
+    SEL_CARD=$(echo "$selected" | sed 's/hw:\([0-9]\+\),.*/\1/')
+    SEL_DEV=$(echo  "$selected" | sed 's/hw:[0-9]\+,\([0-9]\+\)/\1/')
+
+    # Test tone
+    whiptail --title "Test Audio" \
+        --msgbox "Playing test tone on $selected.\n\nPress OK to play." \
+        8 52
+    aplay -D plughw:${SEL_CARD},${SEL_DEV} \
+        /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null
+
+    if whiptail --title "Audio OK?" \
+        --yesno "Did you hear the test sound on $selected?" 8 50; then
+        mkdir -p ~/.config/pulse
+        cat > ~/.config/pulse/default.pa <<EOF
+#!/usr/bin/pulseaudio -nF
+.include /etc/pulse/default.pa
+load-module module-alsa-sink device=hw:${SEL_CARD},${SEL_DEV} sink_name=selected_output
+set-default-sink selected_output
+unload-module module-suspend-on-idle
+EOF
+        sudo bash -c "cat > /etc/asound.conf <<EOF
+defaults.pcm.card ${SEL_CARD}
+defaults.pcm.device ${SEL_DEV}
+defaults.ctl.card ${SEL_CARD}
+EOF"
+        pulseaudio -k 2>/dev/null; sleep 1
+        whiptail --title "Done" \
+            --msgbox "Audio set to: $selected\n\nRestart any open apps to apply." \
+            8 52
+    else
+        whiptail --title "Try Again?" \
+            --yesno "Test failed. Try a different device?" 8 40 \
+            && configure_audio_tui
+    fi
 }
 
-# ── Main loop ────────────────────────────────
+# ── Main menu loop ────────────────────────────────────────────────────────────
 detect_apps
 
-FIRST_RUN=true
+DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
 
-while true; do
-    DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
-
-    if [ "$FIRST_RUN" = true ] && [ -n "$DEFAULT" ] && [ "$DEFAULT" != "Desktop" ]; then
-        # Only show countdown on the very first run (boot)
-        if show_countdown "$DEFAULT"; then
-            CHOICE="$DEFAULT"
-        else
-            CHOICE=$(show_menu)
-        fi
-    else
-        # After an app exits, go straight to the menu — no countdown
-        CHOICE=$(show_menu)
+# Countdown on very first boot if a default is set
+if [ "$FIRST_RUN" = "true" ] && [ -n "$DEFAULT" ] && [ "$DEFAULT" != "Desktop" ]; then
+    if show_countdown "$DEFAULT"; then
+        echo "$DEFAULT" > "$CHOICE_FILE"
+        exit 0
     fi
+    # Key pressed — fall through to menu
+fi
 
-    FIRST_RUN=false
+# Menu loop: Configure Audio and Change Default loop back; everything else exits
+while true; do
+    detect_apps
+    DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
+    [ -n "$DEFAULT" ] && DEFAULT_LINE="Boot default: $DEFAULT" \
+                       || DEFAULT_LINE="Boot default: (none — menu on boot)"
 
-    # Separators and closed dialog → show menu again
+    MENU_ITEMS=()
+    $HAVE_KODI      && MENU_ITEMS+=("Kodi"              "Media center")
+    $HAVE_RETROARCH && MENU_ITEMS+=("RetroArch"         "Emulation frontend")
+    $HAVE_STEAM     && MENU_ITEMS+=("Steam Big Picture" "Gaming — Big Picture mode")
+    MENU_ITEMS+=("Desktop"         "Load XFCE desktop environment")
+    MENU_ITEMS+=("Configure Audio" "Set up audio output device")
+    MENU_ITEMS+=("Change Default"  "Change which app launches on boot")
+    MENU_ITEMS+=("Restart"         "Restart the system")
+    MENU_ITEMS+=("Shutdown"        "Shut down the system")
+
+    MENU_H=$(( ${#MENU_ITEMS[@]} / 2 ))
+
+    CHOICE=$(whiptail --title "Session Manager" \
+        --menu "$DEFAULT_LINE\n\nSelect a session:" \
+        $LINES $COLUMNS "$MENU_H" \
+        "${MENU_ITEMS[@]}" \
+        3>&1 1>&2 2>&3)
+
+    # ESC or cancel — loop back (show menu again)
+    [ $? -ne 0 ] && continue
+
     case "$CHOICE" in
-        "─────────────────────"|"") continue ;;
-    esac
-
-    case "$CHOICE" in
-        "Kodi"|"RetroArch")
-            maybe_start_steam_silent
-            launch_app "$CHOICE"
-            ;;
-        "Steam Big Picture")
-            launch_app "$CHOICE"
-            ;;
-        "Desktop")
-            # ONLY here does XFCE load — exec replaces this process
-            exec startxfce4
-            ;;
         "Configure Audio")
-            /usr/local/bin/configure-audio.sh
-            xsetroot -solid black 2>/dev/null || true
+            configure_audio_tui
             ;;
         "Change Default")
             change_default
-            xsetroot -solid black 2>/dev/null || true
             ;;
-        "Restart")
-            systemctl reboot
-            ;;
-        "Shutdown")
-            systemctl poweroff
+        *)
+            # Any other choice exits to outer loop for action
+            echo "$CHOICE" > "$CHOICE_FILE"
+            exit 0
             ;;
     esac
 done
-SESSIONEOF
-
-chmod +x /usr/local/bin/session-manager.sh
+MENUEOF
+chmod +x /usr/local/bin/session-menu.sh
 
 # Write boot default from install-time choice
 SESSION_CONFIG_DIR="/home/kodi/.config/kodi-session"
@@ -780,8 +821,24 @@ Comment=Launch RetroArch emulation frontend
 Exec=retroarch --fullscreen
 Icon=retroarch
 Terminal=false
+Categories=Game;Emulator;
 X-XFCE-DesktopFile-Trusted=true
 EOF
+    # PPA does not ship a .desktop file so RetroArch won't appear in the
+    # applications menu without this. Create it in /usr/share/applications/.
+    cat > /usr/share/applications/retroarch.desktop <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=RetroArch
+Comment=Emulation frontend
+Exec=retroarch --fullscreen
+Icon=retroarch
+Terminal=false
+Categories=Game;Emulator;
+Keywords=game;emulator;retro;
+EOF
+    update-desktop-database /usr/share/applications/ &>/dev/null || true
 fi
 
 if [ "$STEAM_INSTALLED" = true ]; then
@@ -814,8 +871,8 @@ cat > /home/kodi/Desktop/session-manager.desktop <<'EOF'
 Version=1.0
 Type=Application
 Name=Exit to Session Manager
-Comment=Log out of desktop and return to session chooser
-Exec=xfce4-session-logout
+Comment=End desktop session and return to session chooser
+Exec=pkill -TERM -u kodi xfce4-session
 Icon=system-log-out
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
@@ -844,15 +901,15 @@ Terminal=false
 X-XFCE-DesktopFile-Trusted=true
 EOF
 
-# Shutdown and reboot must go through xfce4-session in a desktop context
-# to avoid the DBus InvalidArgs error caused by calling systemctl directly.
-# xfce4-session-logout --halt and --reboot use the correct XFCE/logind path.
+# systemctl poweroff/reboot work from the desktop because the polkit rule
+# grants the kodi user full permissions. xfce4-session-logout --halt/--reboot
+# triggers a DBus InvalidArgs bug on Ubuntu 22.04 and must not be used.
 cat > /home/kodi/Desktop/shutdown.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=Shutdown
-Exec=xfce4-session-logout --halt
+Exec=systemctl poweroff
 Icon=system-shutdown
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
@@ -863,7 +920,7 @@ cat > /home/kodi/Desktop/reboot.desktop <<'EOF'
 Version=1.0
 Type=Application
 Name=Reboot
-Exec=xfce4-session-logout --reboot
+Exec=systemctl reboot
 Icon=system-reboot
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
@@ -936,17 +993,22 @@ DESKEOF
 
 ! [ "$RETROARCH_INSTALLED" = true ] && \
 write_installer_shortcut "RETROARCH" "Install RetroArch" \
-'apt-get install -y software-properties-common &>/dev/null
-add-apt-repository -y ppa:libretro/stable &>/dev/null
-apt-get update &>/dev/null
-if apt-get install -y retroarch retroarch-assets 2>/dev/null && command -v retroarch &>/dev/null; then
-    echo "RetroArch installed via PPA."
+'apt-get install -y -qq libgl1 libgles2 libegl1 libsdl2-2.0-0 libavcodec58 libavformat58 libswscale5 libfreetype6 libasound2 curl fuse &>/dev/null
+BUILDBOT_BASE="https://buildbot.libretro.com/nightly/linux/x86_64/latest"
+APPIMAGE=$(curl -s "${BUILDBOT_BASE}/" | grep -oP "RetroArch[^\"]+\.AppImage" | head -1)
+if [ -n "$APPIMAGE" ]; then
+    echo "Downloading $APPIMAGE from buildbot..."
+    wget -q "${BUILDBOT_BASE}/${APPIMAGE}" -O /opt/RetroArch.AppImage
+    chmod +x /opt/RetroArch.AppImage
+    printf "#!/usr/bin/env bash\nexec /opt/RetroArch.AppImage \"\$@\"\n" > /usr/local/bin/retroarch
+    chmod +x /usr/local/bin/retroarch
+    echo "RetroArch installed from buildbot (online updater enabled)."
 else
-    echo "PPA failed — trying Flatpak..."
+    echo "Buildbot download failed — trying Flatpak..."
     apt-get install -y flatpak &>/dev/null
     flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
     flatpak install -y --noninteractive flathub org.libretro.RetroArch &>/dev/null
-    printf "#!/usr/bin/env bash\nexec flatpak run org.libretro.RetroArch \"$@\"\n" > /usr/local/bin/retroarch
+    printf "#!/usr/bin/env bash\nexec flatpak run org.libretro.RetroArch \"\$@\"\n" > /usr/local/bin/retroarch
     chmod +x /usr/local/bin/retroarch
     echo "RetroArch installed via Flatpak."
 fi'
