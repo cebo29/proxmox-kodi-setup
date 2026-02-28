@@ -241,6 +241,9 @@ cat > /usr/local/bin/configure-audio.sh <<'AUDIOEOF'
 export DISPLAY="${DISPLAY:-:0}"
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 
+SCREEN_W=$(xdpyinfo 2>/dev/null | grep -m1 dimensions | awk '{print $2}' | cut -dx -f1)
+SCREEN_W=${SCREEN_W:-800}
+
 zenity --info --title="Audio Configuration" \
     --text="This will help you configure your audio output device.\n\nClick OK to continue." \
     --width=400 2>/dev/null
@@ -265,7 +268,9 @@ SELECTED=$(zenity --list --radiolist \
     --title="Select Audio Device" \
     --text="Choose your audio output device:" \
     --column="Select" --column="Device" --column="Description" \
-    "${LIST_ARGS[@]}" --width=600 --height=400 2>/dev/null)
+    "${LIST_ARGS[@]}" \
+    --width="$SCREEN_W" \
+    --height=$(( 160 + ${#DEVICES[@]} * 60 )) 2>/dev/null)
 [ -z "$SELECTED" ] && exit 0
 
 SEL_CARD=$(echo "$SELECTED" | sed 's/hw:\([0-9]\+\),.*/\1/')
@@ -357,19 +362,15 @@ EOF
         fi
     fi
 
-    # Flatpak fallback if buildbot download fails
+    # PPA fallback if buildbot download fails — PPA also supports in-app core download
     if [ "$RETROARCH_INSTALLED" = false ]; then
-        apt-get install -y -qq flatpak &>/dev/null
-        flatpak remote-add --if-not-exists flathub \
-            https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
-        if flatpak install -y --noninteractive flathub org.libretro.RetroArch &>/dev/null; then
+        msg_error "Buildbot failed — falling back to PPA"
+        add-apt-repository -y ppa:libretro/stable &>/dev/null
+        apt-get update -qq &>/dev/null
+        if DEBIAN_FRONTEND=noninteractive apt-get install -y -qq retroarch retroarch-assets 2>/dev/null \
+                && command -v retroarch &>/dev/null; then
             RETROARCH_INSTALLED=true
-            cat > /usr/local/bin/retroarch <<'EOF'
-#!/usr/bin/env bash
-exec flatpak run org.libretro.RetroArch "$@"
-EOF
-            chmod +x /usr/local/bin/retroarch
-            msg_ok "RetroArch installed via Flatpak (fallback — online updater enabled)"
+            msg_ok "RetroArch installed via PPA (fallback — online updater enabled)"
         else
             msg_error "RetroArch installation failed"
         fi
@@ -393,33 +394,38 @@ EOF
         chown -R kodi:kodi "$RETROARCH_CFG_DIR"
         msg_ok "RetroArch configured (use Online Updater → Core Downloader for cores)"
 
-        # ── Auto-download all cores from buildbot ─────────────────────────────
-        # The /latest/ directory has every core as a *_libretro.so.zip file.
-        # We scrape the index, download and extract all of them into the cores dir.
-        msg_info "Downloading RetroArch cores from buildbot"
+        # ── Download 10 popular cores from buildbot ───────────────────────────
+        msg_info "Downloading popular RetroArch cores"
         CORES_URL="https://buildbot.libretro.com/nightly/linux/x86_64/latest"
         CORES_DIR="/home/kodi/.config/retroarch/cores"
         mkdir -p "$CORES_DIR"
 
-        CORE_LIST=$(curl -s "${CORES_URL}/" \
-            | grep -oP '[a-z0-9_]+_libretro\.so\.zip' | sort -u)
-        CORE_COUNT=$(echo "$CORE_LIST" | wc -l)
-        msg_ok "Found $CORE_COUNT cores — downloading"
+        POPULAR_CORES=(
+            "snes9x_libretro.so.zip"          # SNES
+            "mgba_libretro.so.zip"             # GBA / GB / GBC
+            "mupen64plus_next_libretro.so.zip" # N64
+            "genesis_plus_gx_libretro.so.zip"  # Mega Drive / Genesis
+            "mednafen_psx_hw_libretro.so.zip"  # PS1
+            "fbneo_libretro.so.zip"            # Arcade (FinalBurn Neo)
+            "mesen_libretro.so.zip"            # NES
+            "melonds_libretro.so.zip"          # Nintendo DS
+            "ppsspp_libretro.so.zip"           # PSP
+            "dolphin_libretro.so.zip"          # GameCube / Wii
+        )
 
         INSTALLED=0; FAILED=0
-        while IFS= read -r zip; do
-            [ -z "$zip" ] && continue
+        for zip in "${POPULAR_CORES[@]}"; do
             if wget -q "${CORES_URL}/${zip}" -O "/tmp/${zip}" 2>/dev/null; then
                 unzip -q -o "/tmp/${zip}" -d "$CORES_DIR" 2>/dev/null && \
                     INSTALLED=$(( INSTALLED + 1 )) || FAILED=$(( FAILED + 1 ))
                 rm -f "/tmp/${zip}"
             else
                 FAILED=$(( FAILED + 1 ))
+                msg_error "Failed: $zip"
             fi
-        done <<< "$CORE_LIST"
-
+        done
         chown -R kodi:kodi "$CORES_DIR"
-        msg_ok "Installed $INSTALLED cores"
+        msg_ok "Installed $INSTALLED popular cores (use Online Updater for more)"
         [ "$FAILED" -gt 0 ] && msg_error "$FAILED cores failed to download"
     fi
 fi
@@ -514,7 +520,7 @@ fi
 #   No desktop is loaded. The screen is black except for the zenity dialog.
 #   Apps launch fullscreen (kodi by default, retroarch --fullscreen,
 #   steam -gamepadui). When an app exits the loop brings the dialog back.
-#   Selecting "Desktop" is the ONLY thing that loads XFCE (exec startxfce4).
+#   Selecting "Desktop" runs XFCE as a child process — menu reappears on exit.
 #
 # Steam silent mode:
 #   When a non-Steam session is launched AND Steam is installed, start Steam
@@ -711,15 +717,25 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            # Set the connected output as primary — Steam reads primary for window size.
-            # HDMI-1 may be marked primary but disconnected, causing 1/6 screen bug.
-            CONNECTED=$(xrandr 2>/dev/null | awk '/ connected/ {print $1; exit}')
-            [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
+            # Turn off disconnected outputs and set the connected one as primary.
+            # Without this, Steam reads the disconnected HDMI-1 (marked primary)
+            # and renders at its phantom resolution — producing a 1/6 screen window.
+            CONNECTED=$(xrandr 2>/dev/null | awk '/ connected[^(]/{print $1; exit}')
+            if [ -n "$CONNECTED" ]; then
+                CMD="xrandr --output $CONNECTED --primary"
+                while IFS= read -r disc; do
+                    CMD="$CMD --output $disc --off"
+                done < <(xrandr 2>/dev/null | awk '/ disconnected/{print $1}')
+                eval "$CMD" 2>/dev/null || true
+            fi
             if command -v steam &>/dev/null; then steam -gamepadui -fulldesktopres
             elif [ -f /usr/games/steam ]; then /usr/games/steam -gamepadui -fulldesktopres; fi
             ;;
         "Desktop")
-            exec startxfce4
+            # Run XFCE as a child process — session-manager stays alive underneath.
+            # When the user exits XFCE, the while loop resumes and shows the menu.
+            # (exec would replace this process, causing a full lightdm logout loop.)
+            startxfce4
             ;;
         "Configure Audio")
             /usr/local/bin/configure-audio.sh
@@ -994,12 +1010,10 @@ else
     echo "Buildbot download failed — trying Flatpak..."
 fi
 if ! command -v retroarch &>/dev/null; then
-    apt-get install -y flatpak &>/dev/null
-    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo &>/dev/null
-    flatpak install -y --noninteractive flathub org.libretro.RetroArch &>/dev/null
-    printf "#!/usr/bin/env bash\nexec flatpak run org.libretro.RetroArch \"\$@\"\n" > /usr/local/bin/retroarch
-    chmod +x /usr/local/bin/retroarch
-    echo "RetroArch installed via Flatpak."
+    echo "Buildbot failed — trying PPA..."
+    add-apt-repository -y ppa:libretro/stable
+    apt-get update -qq
+    apt-get install -y retroarch retroarch-assets && echo "RetroArch installed via PPA."
 fi'
 
 ! [ "$STEAM_INSTALLED" = true ] && \
