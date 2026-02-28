@@ -984,6 +984,8 @@ write_installer_shortcut() {
 echo "${label}..."
 ${cmd}
 echo "Done."
+# Remove this installer shortcut — app is now installed.
+rm -f "${desktop}" "${script}"
 read -p "Press Enter to close..."
 SCRIPTEOF
     chmod +x "$script"
@@ -993,7 +995,7 @@ SCRIPTEOF
 Version=1.0
 Type=Application
 Name=${label}
-Exec=xfce4-terminal --hold -e "sudo ${script}"
+Exec=xfce4-terminal --hold --geometry=120x35 -e "sudo ${script}"
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
 DESKEOF
@@ -1090,7 +1092,7 @@ cat > /home/kodi/Desktop/install-kodi-ppa.desktop <<'EOF'
 Version=1.0
 Type=Application
 Name=Switch to Kodi (PPA)
-Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-ppa.sh"
+Exec=xfce4-terminal --hold --geometry=120x35 -e "sudo /usr/local/bin/install-kodi-ppa.sh"
 Icon=kodi
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
@@ -1113,7 +1115,7 @@ cat > /home/kodi/Desktop/install-kodi-flatpak.desktop <<'EOF'
 Version=1.0
 Type=Application
 Name=Switch to Kodi (Flatpak)
-Exec=xfce4-terminal --hold -e "sudo /usr/local/bin/install-kodi-flatpak.sh"
+Exec=xfce4-terminal --hold --geometry=120x35 -e "sudo /usr/local/bin/install-kodi-flatpak.sh"
 Icon=kodi
 Terminal=false
 X-XFCE-DesktopFile-Trusted=true
