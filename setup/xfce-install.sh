@@ -577,8 +577,6 @@ detect_apps() {
 maybe_start_steam_silent() {
     $HAVE_STEAM || return 0
     pgrep -x steam &>/dev/null && return 0
-    local vdf="$HOME/.steam/steam/config/loginusers.vdf"
-    grep -q '"MostRecent".*"1"' "$vdf" 2>/dev/null || return 0
     if command -v steam &>/dev/null; then
         steam -silent &>/dev/null &
     elif [ -f /usr/games/steam ]; then
@@ -717,15 +715,14 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            # Turn off disconnected outputs and set the connected one as primary.
-            # Without this, Steam reads the disconnected HDMI-1 (marked primary)
-            # and renders at its phantom resolution — producing a 1/6 screen window.
-            CONNECTED=$(xrandr 2>/dev/null | awk '/ connected[^(]/{print $1; exit}')
+            # Fix: $2 == "connected" does exact field match — "disconnected" won't match.
+            # Previous regex / connected/ incorrectly matched "disconnected" outputs.
+            CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
             if [ -n "$CONNECTED" ]; then
                 CMD="xrandr --output $CONNECTED --primary"
                 while IFS= read -r disc; do
                     CMD="$CMD --output $disc --off"
-                done < <(xrandr 2>/dev/null | awk '/ disconnected/{print $1}')
+                done < <(xrandr 2>/dev/null | awk '$2 == "disconnected" {print $1}')
                 eval "$CMD" 2>/dev/null || true
             fi
             if command -v steam &>/dev/null; then steam -gamepadui -fulldesktopres
