@@ -690,7 +690,7 @@ fi
 # - No strut/gap (unlike matchbox)
 # - When XFCE is selected, startxfce4 finds xfwm4 already running — no flicker
 # - Steam BPM is fullscreen so xfwm4 stays out of the way entirely
-xfwm4 --sm-disable &>/dev/null &
+xfwm4 --sm-disable --compositor=on &>/dev/null &
 sleep 1  # give xfwm4 a moment to register before the first zenity/steam launch
 
 while true; do
@@ -721,21 +721,11 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
-            CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
-            # Steam BPM needs an explicit --mode to render fullscreen on a 4K display.
-            # --primary alone is not sufficient — without --mode, Steam uses a tiny default size.
-            # Switch to 1080p for BPM (its native resolution), restore to auto after exit.
-            if [ -n "$CONNECTED" ]; then
-                xrandr --output "$CONNECTED" --mode 1920x1080 --primary 2>/dev/null || \
-                xrandr --output "$CONNECTED" --primary 2>/dev/null || true
-            fi
-
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
-            $STEAM_BIN steam://open/bigpicture
+            $STEAM_BIN -gamepadui -fulldesktopres
 
-            # Restore native resolution and repaint root window.
-            xrandr --auto 2>/dev/null || true
+            # Repaint root — Steam BPM leaves display black on exit.
             sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
@@ -850,13 +840,7 @@ if [ "$STEAM_INSTALLED" = true ]; then
     cat > /usr/local/bin/steam-bpm.sh <<'EOF'
 #!/usr/bin/env bash
 export DISPLAY="${DISPLAY:-:0}"
-CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
-if [ -n "$CONNECTED" ]; then
-    xrandr --output "$CONNECTED" --mode 1920x1080 --primary 2>/dev/null || \
-    xrandr --output "$CONNECTED" --primary 2>/dev/null || true
-fi
-steam steam://open/bigpicture
-xrandr --auto 2>/dev/null || true
+steam -gamepadui -fulldesktopres
 EOF
     chmod +x /usr/local/bin/steam-bpm.sh
 
