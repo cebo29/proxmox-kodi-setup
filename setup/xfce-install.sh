@@ -691,6 +691,8 @@ fi
 # - When XFCE is selected, startxfce4 finds xfwm4 already running — no flicker
 # - Steam BPM is fullscreen so xfwm4 stays out of the way entirely
 xfwm4 --sm-disable &>/dev/null &
+xfsettingsd --sm-disable &>/dev/null &
+sleep 1  # give xfwm4 a moment to register before the first zenity/steam launch
 
 while true; do
     DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
@@ -727,6 +729,7 @@ while true; do
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
             $STEAM_BIN steam://open/bigpicture
 
+            # Repaint root — Steam BPM leaves display black on exit.
             sleep 1
             xsetroot -solid black 2>/dev/null || true
             sleep 1
@@ -841,7 +844,6 @@ if [ "$STEAM_INSTALLED" = true ]; then
     cat > /usr/local/bin/steam-bpm.sh <<'EOF'
 #!/usr/bin/env bash
 export DISPLAY="${DISPLAY:-:0}"
-# Set connected output as primary so Steam renders at correct resolution.
 CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
 [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
 steam steam://open/bigpicture
