@@ -690,7 +690,7 @@ fi
 # - No strut/gap (unlike matchbox)
 # - When XFCE is selected, startxfce4 finds xfwm4 already running — no flicker
 # - Steam BPM is fullscreen so xfwm4 stays out of the way entirely
-xfwm4 --sm-disable --compositor=on &>/dev/null &
+xfwm4 --compositor=on &>/dev/null &
 sleep 1  # give xfwm4 a moment to register before the first zenity/steam launch
 
 while true; do
