@@ -713,6 +713,7 @@ while true; do
             retroarch --fullscreen
             ;;
         "Steam Big Picture")
+            pkill -x matchbox-window-manager 2>/dev/null || true
             CONNECTED=$(xrandr 2>/dev/null | awk '$2 == "connected" {print $1; exit}')
             [ -n "$CONNECTED" ] && xrandr --output "$CONNECTED" --primary 2>/dev/null || true
 
@@ -723,25 +724,31 @@ while true; do
                 sleep 1; WAIT=$(( WAIT + 1 ))
             done
 
-            # matchbox only during Steam BPM — gives Steam a WM to go fullscreen.
-            # Not run globally because it conflicts with xfwm4 in XFCE.
+            # Start matchbox so Steam opens fullscreen (bare X = tiny window).
+            # Kill it once Steam is running — matchbox grabs the mouse pointer which
+            # breaks Steam BPM input. Steam retains its fullscreen state after WM exits.
             matchbox-window-manager -use_titlebar no &>/dev/null &
-            WMPID=$!
-            sleep 1
+            sleep 2
 
             STEAM_BIN="steam"
             [ -f /usr/games/steam ] && STEAM_BIN="/usr/games/steam"
-            $STEAM_BIN -gamepadui -fulldesktopres
+            $STEAM_BIN -gamepadui -fulldesktopres &
+            STEAMPID=$!
 
+            # Wait for Steam window to appear, then drop matchbox.
+            sleep 5
             pkill -x matchbox-window-manager 2>/dev/null || true
-            wait "$WMPID" 2>/dev/null || true
 
-            # Steam BPM leaves display in black compositor state — repaint before menu.
-            sleep 1
+            # Now wait for Steam to fully exit.
+            wait "$STEAMPID" 2>/dev/null || true
+
+            # Repaint root window — Steam BPM leaves display black on exit.
             xsetroot -solid black 2>/dev/null || true
             sleep 1
             ;;
         "Desktop")
+            # Kill matchbox if running from a previous Steam BPM exit.
+            pkill -x matchbox-window-manager 2>/dev/null || true
             # startxfce4 brings its own xfwm4 — no matchbox needed or wanted.
             # Steam runs silently in desktop session for updates/friends.
             maybe_start_steam_silent
