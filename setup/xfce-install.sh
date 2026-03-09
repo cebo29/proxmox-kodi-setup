@@ -542,6 +542,7 @@ export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 
 CONFIG_DIR="$HOME/.config/kodi-session"
 CONFIG_FILE="$CONFIG_DIR/default"
+URL_FILE="$CONFIG_DIR/browser-url"
 COUNTDOWN_SECS=5
 BOOT_FLAG="/run/kodi-session-booted"
 
@@ -566,10 +567,14 @@ EOF
 # ── Detect installed apps ─────────────────────────────────────────────────────
 detect_apps() {
     HAVE_KODI=false; HAVE_RETROARCH=false; HAVE_STEAM=false
+    HAVE_FIREFOX=false; HAVE_BRAVE=false; HAVE_CHROME=false
     ( command -v kodi &>/dev/null || \
       flatpak list 2>/dev/null | grep -q "tv.kodi.Kodi" ) && HAVE_KODI=true
     command -v retroarch &>/dev/null && HAVE_RETROARCH=true
     ( command -v steam &>/dev/null || [ -f /usr/games/steam ] ) && HAVE_STEAM=true
+    command -v firefox &>/dev/null && HAVE_FIREFOX=true
+    command -v brave-browser &>/dev/null && HAVE_BRAVE=true
+    command -v google-chrome &>/dev/null && HAVE_CHROME=true
 }
 
 # ── Only start Steam silently if user is already logged in ───────────────────
@@ -591,11 +596,15 @@ build_menu_rows() {
     $HAVE_KODI      && MENU_ROWS+=("Kodi"              "Media center (fullscreen)")
     $HAVE_RETROARCH && MENU_ROWS+=("RetroArch"         "Emulation frontend (fullscreen)")
     $HAVE_STEAM     && MENU_ROWS+=("Steam Big Picture" "Gaming — Big Picture mode")
+    $HAVE_FIREFOX   && MENU_ROWS+=("Firefox"           "Web browser (kiosk mode)")
+    $HAVE_BRAVE     && MENU_ROWS+=("Brave"             "Web browser (kiosk mode)")
+    $HAVE_CHROME    && MENU_ROWS+=("Chrome"            "Web browser (kiosk mode)")
     MENU_ROWS+=("─────────────────────" "")
     MENU_ROWS+=("Desktop"              "Load XFCE desktop environment")
     MENU_ROWS+=("─────────────────────" "")
     MENU_ROWS+=("Configure Audio"      "Set up audio output device")
     MENU_ROWS+=("Change Default"       "Choose which app launches on boot")
+    MENU_ROWS+=("Set Browser URL"      "Set the URL opened in kiosk browser mode")
     MENU_ROWS+=("─────────────────────" "")
     MENU_ROWS+=("Restart"              "Restart the system")
     MENU_ROWS+=("Shutdown"             "Shut down the system")
@@ -649,6 +658,9 @@ change_default() {
     $HAVE_KODI      && opts+=("Kodi"              "Launch Kodi on boot")
     $HAVE_RETROARCH && opts+=("RetroArch"         "Launch RetroArch on boot")
     $HAVE_STEAM     && opts+=("Steam Big Picture" "Launch Steam Big Picture on boot")
+    $HAVE_FIREFOX   && opts+=("Firefox"           "Launch Firefox in kiosk mode on boot")
+    $HAVE_BRAVE     && opts+=("Brave"             "Launch Brave in kiosk mode on boot")
+    $HAVE_CHROME    && opts+=("Chrome"            "Launch Chrome in kiosk mode on boot")
     opts+=("Desktop" "Show session menu on boot (no auto-launch)")
 
     local chosen
@@ -672,6 +684,29 @@ change_default() {
             --text="Boot default set to: <b>$chosen</b>\n\nTakes effect on next boot." \
             --width=360 2>/dev/null
     fi
+}
+
+set_browser_url() {
+    local current
+    current=$(cat "$URL_FILE" 2>/dev/null || echo "https://")
+    local url
+    url=$(zenity --entry \
+        --title="Set Browser URL" \
+        --text="Enter the URL to open in kiosk mode:\n(Leave as https:// for blank start page)" \
+        --entry-text="$current" \
+        --width=600 2>/dev/null)
+    [ -z "$url" ] && return
+    echo "$url" > "$URL_FILE"
+    zenity --info --title="URL Saved" \
+        --text="Browser URL set to:\n<b>$url</b>" \
+        --width=400 2>/dev/null
+}
+
+launch_browser() {
+    local bin="$1"
+    local url
+    url=$(cat "$URL_FILE" 2>/dev/null || echo "https://")
+    "$bin" --kiosk "$url"
 }
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -737,6 +772,18 @@ while true; do
             startxfce4
             # Kill silent Steam when user exits desktop.
             pkill -x steam 2>/dev/null || true
+            ;;
+        "Firefox")
+            launch_browser firefox
+            ;;
+        "Brave")
+            launch_browser brave-browser
+            ;;
+        "Chrome")
+            launch_browser google-chrome
+            ;;
+        "Set Browser URL")
+            set_browser_url
             ;;
         "Configure Audio")
             /usr/local/bin/configure-audio.sh
