@@ -62,9 +62,21 @@ else
     read -p "Install LibreOffice? (y/n): " -n 1 -r INSTALL_LIBREOFFICE; echo
     read -p "Install VLC? (y/n): "         -n 1 -r INSTALL_VLC;         echo
     read -p "Install GIMP? (y/n): "        -n 1 -r INSTALL_GIMP;        echo
+
+    echo -e "\n${GN}=== Boot Default ===${CL}"
+    echo "Options: Desktop, Kodi, RetroArch, Steam Big Picture, Firefox, Brave, Chrome"
+    read -p "Default session on boot [Desktop]: " DEFAULT_SESSION_INPUT
+    [ -n "$DEFAULT_SESSION_INPUT" ] && DEFAULT_SESSION="$DEFAULT_SESSION_INPUT"
+
+    # If a browser was chosen as default, ask for the startup URL
+    if [[ "$DEFAULT_SESSION" =~ ^(Firefox|Brave|Chrome)$ ]]; then
+        read -p "Browser startup URL [https://]: " BROWSER_URL_INPUT
+        BROWSER_URL="${BROWSER_URL_INPUT:-https://}"
+    fi
 fi
 
 DEFAULT_SESSION="${DEFAULT_SESSION:-Desktop}"
+BROWSER_URL="${BROWSER_URL:-https://}"
 CONFIGURE_AUDIO="${CONFIGURE_AUDIO:-no}"
 KODI_PASS="${KODI_PASS:-kodi}"
 
@@ -813,6 +825,11 @@ if [ "$DEFAULT_SESSION" != "Desktop" ] && [ -n "$DEFAULT_SESSION" ]; then
 else
     msg_ok "Session default: show menu on boot"
 fi
+# Write browser URL if set
+if [ -n "$BROWSER_URL" ] && [ "$BROWSER_URL" != "https://" ]; then
+    echo "$BROWSER_URL" > "$SESSION_CONFIG_DIR/browser-url"
+    msg_ok "Browser URL written: $BROWSER_URL"
+fi
 chown -R kodi:kodi "$SESSION_CONFIG_DIR"
 msg_ok "Session Manager installed"
 
@@ -1199,6 +1216,8 @@ echo -e "${GN}╚═════════════════════
 echo -e "\n${BL}Session Manager:${CL}"
 if [ "$DEFAULT_SESSION" != "Desktop" ] && [ -n "$DEFAULT_SESSION" ]; then
     echo -e "  • Boot: ${GN}black screen → $DEFAULT_SESSION countdown → fullscreen${CL}"
+    [[ "$DEFAULT_SESSION" =~ ^(Firefox|Brave|Chrome)$ ]] && \
+        echo -e "  • Browser URL: ${GN}$BROWSER_URL${CL}"
 else
     echo -e "  • Boot: ${GN}black screen → session menu${CL}"
 fi
