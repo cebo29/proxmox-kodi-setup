@@ -88,6 +88,7 @@ INSTALL_APPS="$INSTALL_APPS"
 KODI_PASS="$KODI_PASS"
 CONFIGURE_AUDIO="$CONFIGURE_AUDIO"
 DEFAULT_SESSION="$DEFAULT_SESSION"
+BROWSER_URL="$BROWSER_URL"
 EOF
     echo -e "${GN}Settings saved to $SETTINGS_FILE${CL}"
 }
@@ -121,6 +122,9 @@ function show_saved_settings() {
     if [ "$INSTALL_MODE" = "xfce" ]; then
         echo -e "${DGN}Apps: ${BGN}${INSTALL_APPS:-None}${CL}"
         echo -e "${DGN}Default Session: ${BGN}${DEFAULT_SESSION:-Desktop (none)}${CL}"
+        if [[ "${DEFAULT_SESSION:-}" =~ ^(Firefox|Brave|Chrome)$ ]]; then
+            echo -e "${DGN}Browser URL: ${BGN}${BROWSER_URL:-https://}${CL}"
+        fi
     fi
     echo ""
 }
@@ -158,7 +162,7 @@ function default_settings() {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Build a radiolist from only the launchable apps the user actually selected.
-# Sets global DEFAULT_SESSION.
+# Sets global DEFAULT_SESSION (and BROWSER_URL if a browser is chosen).
 # NOTE: Uses count=$((count + 1)) intentionally — avoids the bash errexit
 #       pitfall where (( count++ )) returns exit code 1 when count==0.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -179,6 +183,18 @@ function ask_default_session() {
         radio_items+=("Steam Big Picture" "Launch Steam in Big Picture mode on boot" OFF)
         count=$((count + 1))
     fi
+    if [[ "$apps_string" == *"FIREFOX"* ]]; then
+        radio_items+=("Firefox" "Launch Firefox browser on boot" OFF)
+        count=$((count + 1))
+    fi
+    if [[ "$apps_string" == *"BRAVE"* ]]; then
+        radio_items+=("Brave" "Launch Brave browser on boot" OFF)
+        count=$((count + 1))
+    fi
+    if [[ "$apps_string" == *"CHROME"* ]]; then
+        radio_items+=("Chrome" "Launch Google Chrome on boot" OFF)
+        count=$((count + 1))
+    fi
     # Desktop is always an option
     radio_items+=("Desktop" "No auto-launch — show session menu immediately" OFF)
     count=$((count + 1))
@@ -186,6 +202,7 @@ function ask_default_session() {
     # If nothing launchable was selected (only Desktop in list), skip prompt
     if [ $count -le 1 ]; then
         DEFAULT_SESSION="Desktop"
+        BROWSER_URL="https://"
         echo -e "${YW}No launchable apps selected — session menu will appear on boot${CL}"
         return
     fi
@@ -200,9 +217,25 @@ function ask_default_session() {
     exitstatus=$?
     if [ $exitstatus != 0 ] || [ -z "$DEFAULT_SESSION" ]; then
         DEFAULT_SESSION="Desktop"
+        BROWSER_URL="https://"
         echo -e "${YW}No default selected — session menu will appear on boot${CL}"
     else
         echo -e "${GN}Default session on boot: ${BGN}$DEFAULT_SESSION${CL}"
+        # If a browser was chosen, ask for the startup URL
+        if [[ "$DEFAULT_SESSION" =~ ^(Firefox|Brave|Chrome)$ ]]; then
+            BROWSER_URL=$(whiptail --inputbox \
+                "Set the URL this browser opens on boot:\n\n(Leave empty for blank page)" \
+                10 68 "https://" --title "BROWSER STARTUP URL" 3>&1 1>&2 2>&3)
+            exitstatus=$?
+            if [ $exitstatus != 0 ] || [ -z "$BROWSER_URL" ]; then
+                BROWSER_URL="https://"
+                echo -e "${YW}No URL set — browser will open a blank page${CL}"
+            else
+                echo -e "${GN}Browser startup URL: ${BGN}$BROWSER_URL${CL}"
+            fi
+        else
+            BROWSER_URL="https://"
+        fi
     fi
 }
 
@@ -262,6 +295,7 @@ function ask_xfce_options() {
     export KODI_PASS
     export CONFIGURE_AUDIO
     export DEFAULT_SESSION
+    export BROWSER_URL
     export INSTALL_APPS="$APPS"
 }
 
@@ -408,12 +442,13 @@ if [ -f "$SETTINGS_FILE" ]; then
             echo -e "${GN}Using saved settings${CL}"
             CT_ID=$(pvesh get /cluster/nextid)
             echo -e "${DGN}Using Next Available Container ID: ${BGN}$CT_ID${CL}"
-            # Compatibility defaults for old saved settings (before DEFAULT_SESSION existed)
+            # Compatibility defaults for old saved settings
             KODI_PASS="${KODI_PASS:-kodi}"
             CONFIGURE_AUDIO="${CONFIGURE_AUDIO:-no}"
             DEFAULT_SESSION="${DEFAULT_SESSION:-Desktop}"
+            BROWSER_URL="${BROWSER_URL:-https://}"
             if [ "$INSTALL_MODE" = "xfce" ]; then
-                export KODI_PASS CONFIGURE_AUDIO DEFAULT_SESSION INSTALL_APPS
+                export KODI_PASS CONFIGURE_AUDIO DEFAULT_SESSION BROWSER_URL INSTALL_APPS
             fi
             SAVE_SETTINGS=false
             return 0
@@ -556,10 +591,14 @@ if [ "$INSTALL_MODE" = "xfce" ]; then
         "export KODI_PASS='$KODI_PASS' \
                 CONFIGURE_AUDIO='$CONFIGURE_AUDIO' \
                 DEFAULT_SESSION='$DEFAULT_SESSION' \
+                BROWSER_URL='$BROWSER_URL' \
                 INSTALL_APPS='$INSTALL_APPS'; \
         $(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/xfce-install.sh)" || exit
     SUCCESS_MSG="XFCE + Session Manager installed successfully!"
-    ADDITIONAL_INFO="• Session manager runs on boot\n• Default session: $DEFAULT_SESSION\n• All selected apps installed\n• Steam updates silently in background when not the active session\n• Change default any time from the session menu"
+    ADDITIONAL_INFO="• Session manager runs on boot\n• Default session: $DEFAULT_SESSION"
+    [[ "$DEFAULT_SESSION" =~ ^(Firefox|Brave|Chrome)$ ]] && \
+        ADDITIONAL_INFO="${ADDITIONAL_INFO}\n• Browser startup URL: $BROWSER_URL"
+    ADDITIONAL_INFO="${ADDITIONAL_INFO}\n• All selected apps installed\n• Steam updates silently in background when not the active session\n• Change default any time from the session menu"
 else
     lxc-attach -n $CTID -- bash -c \
         "$(wget -qLO - https://raw.githubusercontent.com/kjames2001/proxmoxHelper/dev/setup/$var_install.sh)" || exit
