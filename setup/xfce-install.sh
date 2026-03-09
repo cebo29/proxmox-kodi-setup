@@ -740,6 +740,10 @@ fi
 xfwm4 --compositor=on &>/dev/null &
 sleep 1  # give xfwm4 a moment to register before the first zenity/steam launch
 
+xset s off        # disable screensaver
+xset s noblank    # disable screen blanking
+xset -dpms        # disable DPMS (display power management)
+
 while true; do
     DEFAULT=$(cat "$CONFIG_FILE" 2>/dev/null || echo "")
 
