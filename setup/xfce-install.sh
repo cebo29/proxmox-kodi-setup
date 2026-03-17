@@ -1206,8 +1206,10 @@ sudo -u kodi XDG_RUNTIME_DIR=/run/user/1000 \
 msg_info "Installing HDMI audio fix service"
 cat > /usr/local/bin/alsa-hdmi-fix.sh <<'EOF'
 #!/usr/bin/env bash
-for card_num in 0 1 2 3 4 5 6 7 8 9; do
-    amixer -c $card_num sset "IEC958 Playback Switch" on 2>/dev/null || true
+for card in 0 1 2 3 4 5 6 7 8 9; do
+    for idx in 0 1 2 3 4 5 6 7 8; do
+        amixer -c $card cset "name='IEC958 Playback Switch',index=$idx" on 2>/dev/null || true
+    done
 done
 alsactl store 2>/dev/null || true
 EOF
