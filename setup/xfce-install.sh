@@ -1203,6 +1203,33 @@ sudo -u kodi XDG_RUNTIME_DIR=/run/user/1000 \
     systemctl --user enable pulseaudio.socket pulseaudio.service &>/dev/null || true
 
 # ─────────────────────────────────────────────
+msg_info "Installing HDMI audio fix service"
+cat > /usr/local/bin/alsa-hdmi-fix.sh <<'EOF'
+#!/usr/bin/env bash
+for card_num in 0 1 2 3 4 5 6 7 8 9; do
+    amixer -c $card_num sset "IEC958 Playback Switch" on 2>/dev/null || true
+done
+alsactl store 2>/dev/null || true
+EOF
+chmod +x /usr/local/bin/alsa-hdmi-fix.sh
+
+cat > /etc/systemd/system/alsa-hdmi-fix.service <<'EOF'
+[Unit]
+Description=Enable HDMI/DP IEC958 digital audio output
+After=alsa-restore.service
+Wants=alsa-restore.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/alsa-hdmi-fix.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable alsa-hdmi-fix.service &>/dev/null
+msg_ok "HDMI audio fix service installed"
+
 # Start lightdm
 # ─────────────────────────────────────────────
 msg_info "Starting lightdm"
