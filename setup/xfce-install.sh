@@ -91,7 +91,7 @@ msg_ok "System updated"
 msg_info "Installing XFCE and base X packages"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     xfce4 xfce4-goodies xfce4-terminal openbox \
-    xorg xserver-xorg-video-intel xserver-xorg-video-fbdev \
+    xorg xserver-xorg-video-intel \
     xserver-xorg-input-evdev \
     zenity xterm whiptail x11-utils xdotool \
     pulseaudio pulseaudio-utils pavucontrol alsa-utils \
@@ -123,7 +123,6 @@ cat > /etc/lightdm/lightdm.conf.d/autologin-kodi.conf <<'EOF'
 [Seat:*]
 autologin-user=kodi
 autologin-session=kodi-session
-xserver-command=X vt7
 EOF
 msg_ok "lightdm configured (autologin → kodi-session)"
 
@@ -166,40 +165,6 @@ SupplementaryGroups=video render input audio tty
 EOF
 systemctl daemon-reload
 msg_ok "Xorg input detection configured"
-
-# ─────────────────────────────────────────────
-# Xorg display config — required for GPU passthrough in LXC
-# Without this, Xorg cannot auto-detect the display device
-# Tries modesetting (DRM) first, falls back to fbdev
-# ─────────────────────────────────────────────
-msg_info "Writing Xorg display config"
-mkdir -p /etc/X11/xorg.conf.d
-cat > /etc/X11/xorg.conf.d/20-gpu.conf <<'EOF'
-Section "Device"
-    Identifier  "Card0"
-    Driver      "modesetting"
-    Option      "kmsdev" "/dev/dri/card0"
-EndSection
-
-Section "Screen"
-    Identifier  "Screen0"
-    Device      "Card0"
-EndSection
-
-Section "ServerLayout"
-    Identifier  "Layout0"
-    Screen      "Screen0"
-EndSection
-EOF
-# fbdev fallback config — used if modesetting/DRM is unavailable
-cat > /etc/X11/xorg.conf.d/21-fbdev.conf <<'EOF'
-Section "Device"
-    Identifier  "FBDev"
-    Driver      "fbdev"
-    Option      "fbdev" "/dev/fb0"
-EndSection
-EOF
-msg_ok "Xorg display config written"
 
 # ─────────────────────────────────────────────
 # PolicyKit
