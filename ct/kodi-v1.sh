@@ -302,7 +302,8 @@ function ask_xfce_options() {
 function advanced_settings() {
 var_version=$(whiptail --title "UBUNTU VERSION" --radiolist "Choose Version" 10 58 2 \
 "20.04" "Focal" OFF \
-"22.04" "Jammy" ON \
+"22.04" "Jammy" OFF \
+"26.04" "Resolute Racoon" ON \
 3>&1 1>&2 2>&3)
 exitstatus=$?
 if [ $exitstatus = 0 ]; then echo -e "${DGN}Using Ubuntu Version: ${BGN}$var_version${CL}"; fi
